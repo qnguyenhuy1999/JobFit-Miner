@@ -183,6 +183,7 @@ export default function Home() {
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [siteUrl, setSiteUrl] = useState("https://itviec.com");
   const [keyword, setKeyword] = useState("React Node.js Fullstack");
+  const [location, setLocation] = useState("ho-chi-minh-hcm");
   const [profile, setProfile] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [coverLetters, setCoverLetters] = useState<Record<number, string>>({});
@@ -199,7 +200,7 @@ export default function Home() {
       const res = await fetch("/api/mine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteUrl, keyword }),
+        body: JSON.stringify({ siteUrl, keyword, location: location || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Mine failed");
@@ -344,6 +345,22 @@ export default function Home() {
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder="React Node.js Fullstack"
               />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide text-stone-500 mb-1.5">
+                Location
+              </label>
+              <select
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+              >
+                <option value="ho-chi-minh-hcm">Ho Chi Minh City</option>
+                <option value="ha-noi">Hanoi</option>
+                <option value="da-nang">Da Nang</option>
+                <option value="">Anywhere</option>
+              </select>
             </div>
 
             <div>
