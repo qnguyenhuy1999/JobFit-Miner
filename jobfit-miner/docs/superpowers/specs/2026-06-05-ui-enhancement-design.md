@@ -140,6 +140,21 @@ No new packages. No new files beyond the above.
 
 ---
 
+## Acceptance Criteria
+
+- User can mine jobs from ITviec and see saved jobs
+- Step 3 shows mined job count + small preview list of job titles before scoring
+- Score action scores max 20 jobs (MVP cap — pass `limit: 20` to score API)
+- Results are sorted by score descending
+- Cover letter generated only on explicit per-job button click (no auto-generation)
+- Cover letter expands inline inside its job card
+- Empty states shown: no jobs mined yet, no scored results yet
+- Error states shown clearly inside the active step card
+- No autofill, no auto-submit on any input or step transition
+- No new npm packages added
+
+---
+
 ## Out of Scope
 
 - Profile persistence across sessions (future)
