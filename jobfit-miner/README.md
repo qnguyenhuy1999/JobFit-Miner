@@ -2,6 +2,21 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Create your local env file first:
+
+```bash
+cp .env.example .env.local
+```
+
+Supported OpenAI env vars:
+
+```bash
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_BASE_URL=
+```
+
+Set `OPENAI_BASE_URL` when you want the app to call a custom OpenAI-compatible endpoint instead of the default `https://api.openai.com/v1`.
+
 First, run the development server:
 
 ```bash

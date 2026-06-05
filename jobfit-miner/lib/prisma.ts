@@ -3,8 +3,7 @@ import { PrismaClient } from "@/app/generated/prisma/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 
 function createPrismaClient() {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) throw new Error("DATABASE_URL not configured");
+  const dbUrl = process.env.DATABASE_URL ?? "file:./dev.db";
 
   // Resolve file: relative paths to absolute so libsql finds the DB regardless of CWD
   const resolvedUrl = dbUrl.startsWith("file:./")

@@ -326,7 +326,7 @@ export default function Home() {
               </label>
               <input
                 autoComplete="off"
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                 value={siteUrl}
                 onChange={(e) => setSiteUrl(e.target.value)}
                 placeholder="https://itviec.com"
@@ -340,7 +340,7 @@ export default function Home() {
               </label>
               <input
                 autoComplete="off"
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder="React Node.js Fullstack"
@@ -352,7 +352,7 @@ export default function Home() {
                 Location
               </label>
               <select
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
               >
@@ -368,7 +368,7 @@ export default function Home() {
                 Your Profile & Skills
               </label>
               <textarea
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                 rows={4}
                 value={profile}
                 onChange={(e) => setProfile(e.target.value)}
