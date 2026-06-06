@@ -21,13 +21,12 @@ export async function POST(req: Request) {
     return Response.json({ error: "No jobs to score. Mine jobs first." }, { status: 400 });
   }
 
-  const jobsToScore = jobs.slice(0, 20);
-  const results = await Promise.all(
-    jobsToScore.map(async (job) => {
-      const { score, reason } = await scoreJob(profile, job);
-      return updateScore(job.id, score, reason);
-    })
-  );
+  const jobsToScore = jobs.slice(0, 10);
+  const results = [];
+  for (const job of jobsToScore) {
+    const { score, reason } = await scoreJob(profile, job);
+    results.push(await updateScore(job.id, score, reason));
+  }
 
   return Response.json({ jobs: results, count: results.length });
 }

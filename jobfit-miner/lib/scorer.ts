@@ -170,7 +170,9 @@ function parseStructuredOutput<T>(completion: CompletionLike, schema?: z.ZodType
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(rawContent);
+    // Strip markdown code fences if present
+    const jsonStr = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+    parsed = JSON.parse(jsonStr);
   } catch {
     throw new Error("No structured result returned by model");
   }
@@ -181,6 +183,22 @@ function parseStructuredOutput<T>(completion: CompletionLike, schema?: z.ZodType
 export const __testables = {
   parseStructuredOutput,
 };
+
+async function callWithRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const is429 = err instanceof Error && (err.message.includes("429") || err.message.includes("concurrent"));
+      if (is429 && i < retries - 1) {
+        await new Promise((r) => setTimeout(r, 5000 * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
 
 export async function scoreJob(
   profile: string,
@@ -194,12 +212,13 @@ export async function scoreJob(
   const client = getClient();
   if (!client) return scoreLocally(profile, job);
 
-  const completion = await client.chat.completions.create({
-    model: "glm-4.7-flash",
-    messages: [
-      {
-        role: "user",
-        content: `Rate how well this job matches the candidate profile. Return valid JSON only with this shape: {"score": number, "reason": string}. Score must be an integer from 0 to 100.
+  const completion = await callWithRetry(() =>
+    client.chat.completions.create({
+      model: "glm-4.7-flash",
+      messages: [
+        {
+          role: "user",
+          content: `Rate how well this job matches the candidate profile. Return valid JSON only with this shape: {"score": number, "reason": string}. Score must be an integer from 0 to 100.
 
         Candidate profile:
         ${profile}
@@ -209,9 +228,10 @@ export async function scoreJob(
         Company: ${job.company ?? "Unknown"}
         Location: ${job.location ?? "Unknown"}
         Description: ${job.description ?? "No description"}`,
-      },
-    ],
-  });
+        },
+      ],
+    })
+  );
 
   return parseStructuredOutput(completion, ScoreSchema);
 }
