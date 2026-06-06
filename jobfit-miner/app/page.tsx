@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getProfileSetupState } from "@/lib/profile-setup";
+import { SUPPORTED_SITES } from "@/crawlers/sites";
 
 type Job = {
   id: number;
@@ -224,7 +225,7 @@ export default function Home() {
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [siteUrl, setSiteUrl] = useState("https://itviec.com");
   const [keyword, setKeyword] = useState("React Node.js Fullstack");
-  const [location, setLocation] = useState("ho-chi-minh-hcm");
+  const [location, setLocation] = useState("Ho Chi Minh City");
   const [profile, setProfile] = useState("");
   const [savedProfile, setSavedProfile] = useState<CandidateProfile | null>(
     null,
@@ -426,35 +427,12 @@ export default function Home() {
     hasSelectedFile: Boolean(profileFile),
     sourceName: savedProfile?.sourceName,
   });
+  const selectedSite =
+    SUPPORTED_SITES.find((option) => option.baseUrl === siteUrl) ??
+    SUPPORTED_SITES[0];
 
   return (
-    <main className="min-w-2xl max-w-4xl mx-auto px-4 py-8 space-y-5">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0"
-          style={{ background: "linear-gradient(135deg,#f97316,#ec4899)" }}
-        >
-          ⛏
-        </div>
-        <div>
-          <div
-            className="text-xl font-extrabold tracking-tight"
-            style={{
-              background: "linear-gradient(90deg,#f97316,#ec4899)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-            }}
-          >
-            JobFit Miner
-          </div>
-          <div className="text-xs text-stone-400">
-            Mine jobs. Score your fit. Ship cover letters.
-          </div>
-        </div>
-      </div>
-
+    <main className="mx-auto w-full max-w-4xl px-4 py-8 space-y-5">
       {/* Stepper */}
       <Stepper current={currentStep} />
 
@@ -573,17 +551,21 @@ export default function Home() {
 
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wide text-stone-500 mb-1.5">
-                Job Site URL
+                Job source
               </label>
-              <input
-                autoComplete="off"
+              <select
                 className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                 value={siteUrl}
                 onChange={(e) => setSiteUrl(e.target.value)}
-                placeholder="https://itviec.com"
-              />
+              >
+                {SUPPORTED_SITES.map((site) => (
+                  <option key={site.name} value={site.baseUrl}>
+                    {site.label}
+                  </option>
+                ))}
+              </select>
               <p className="text-[11px] text-stone-400 mt-1">
-                Currently supports ITviec.
+                Public search only. Current source: {selectedSite.label}.
               </p>
             </div>
 
@@ -609,9 +591,9 @@ export default function Home() {
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
               >
-                <option value="ho-chi-minh-hcm">Ho Chi Minh City</option>
-                <option value="ha-noi">Hanoi</option>
-                <option value="da-nang">Da Nang</option>
+                <option value="Ho Chi Minh City">Ho Chi Minh City</option>
+                <option value="Hanoi">Hanoi</option>
+                <option value="Da Nang">Da Nang</option>
                 <option value="">Anywhere</option>
               </select>
             </div>
@@ -647,7 +629,7 @@ export default function Home() {
         <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm space-y-4">
           <div>
             <h2 className="text-base font-bold text-stone-900">
-              Mining ITviec…
+              Mining {selectedSite.label}…
             </h2>
             <p className="text-sm text-stone-500 mt-0.5">
               Searching for{" "}
@@ -668,7 +650,7 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
-              Navigated to ITviec search
+              Navigated to {selectedSite.label} search
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0 animate-pulse" />

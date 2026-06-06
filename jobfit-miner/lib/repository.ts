@@ -1,5 +1,10 @@
 import { prisma } from "./prisma";
 import { splitJobsByKnownUrls } from "./job-deduper";
+import {
+  buildJobListWhere,
+  buildPagination,
+  type JobListParams,
+} from "./job-listing.ts";
 import type { JobItem } from "./types";
 
 export async function saveNewJobs(jobs: JobItem[]) {
@@ -48,6 +53,30 @@ export async function getSavedJobs() {
   return prisma.job.findMany({
     orderBy: [{ createdAt: "desc" }],
   });
+}
+
+export async function listJobs(params: JobListParams) {
+  const where = buildJobListWhere(params);
+  const skip = (params.page - 1) * params.pageSize;
+
+  const [jobs, total] = await Promise.all([
+    prisma.job.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }],
+      skip,
+      take: params.pageSize,
+    }),
+    prisma.job.count({ where }),
+  ]);
+
+  return {
+    jobs,
+    pagination: buildPagination({
+      page: params.page,
+      pageSize: params.pageSize,
+      total,
+    }),
+  };
 }
 
 export async function getRankedJobs() {

@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
-import { extractJobsWithConfiguredAi } from "@/lib/ai-job-miner";
-import type { JobCrawler, JobItem } from "@/lib/types";
+import { extractJobsWithConfiguredAi } from "../lib/ai-job-miner.ts";
+import type { JobCrawler, JobItem } from "../lib/types.ts";
 
 type ScrapedJob = {
   title: string;
@@ -31,8 +31,16 @@ async function scrapeJobs(
 
   try {
     const base = siteUrl.replace(/\/$/, "");
+    const normalizedLocation =
+      location === "Ho Chi Minh City"
+        ? "ho-chi-minh-hcm"
+        : location === "Hanoi"
+          ? "ha-noi"
+          : location === "Da Nang"
+            ? "da-nang"
+            : location;
     const params = new URLSearchParams({ query: keyword });
-    if (location) params.set("location", location);
+    if (normalizedLocation) params.set("location", normalizedLocation);
     const searchUrl = `${base}/it-jobs?${params.toString()}`;
     await page.goto(searchUrl, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(5000);

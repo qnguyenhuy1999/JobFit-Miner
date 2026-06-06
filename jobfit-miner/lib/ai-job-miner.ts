@@ -4,7 +4,7 @@ import {
   type CompletionLike,
   parseStructuredCompletion,
 } from "./ai-completion.ts";
-import type { JobItem } from "./types";
+import type { JobItem } from "./types.ts";
 
 const ExtractedJobSchema = z.object({
   title: z.string().optional(),

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { __testables } from "./index.ts";
 
-test("getCrawlerByUrl resolves linkedin topcv and vietnamworks", () => {
+test("crawler index resolves linkedin topcv and vietnamworks", () => {
   assert.equal(
     __testables.getCrawlerByUrl("https://www.linkedin.com/jobs"),
     "linkedin",
