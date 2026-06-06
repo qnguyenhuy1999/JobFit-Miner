@@ -1,5 +1,9 @@
 import OpenAI from "openai";
 import { z } from "zod";
+import {
+  type CompletionLike,
+  parseStructuredCompletion,
+} from "./ai-completion.ts";
 
 const ScoreSchema = z.object({
   score: z.number().int().min(0).max(100),
@@ -76,8 +80,10 @@ function scoreLocally(
     location?: string | null;
     description?: string | null;
   },
+  expectations?: string,
 ): ScoreResult {
   const profileTerms = buildKeywordSet(profile);
+  const expectationTerms = buildKeywordSet(expectations ?? "");
   const jobText = [job.title, job.company, job.location, job.description]
     .filter(Boolean)
     .join(" ");
@@ -86,16 +92,25 @@ function scoreLocally(
   const matches = [...new Set(jobTerms)].filter((term) =>
     profileTerms.has(term),
   );
+  const expectationMatches = [...new Set(jobTerms)].filter((term) =>
+    expectationTerms.has(term),
+  );
   const titleMatches = [...new Set(titleTerms)].filter((term) =>
     profileTerms.has(term),
   );
-  const baseScore = 25 + matches.length * 8 + titleMatches.length * 10;
+  const baseScore =
+    25 + matches.length * 8 + titleMatches.length * 10 + expectationMatches.length * 6;
   const score =
     jobTerms.length === 0 ? 35 : Math.max(20, Math.min(96, baseScore));
-  const reason =
+  const reason = [
+    `JD evaluation: ${score >= 70 ? "strong" : score >= 40 ? "partial" : "low"} expectation fit.`,
     matches.length > 0
-      ? `Local fallback score based on shared keywords: ${matches.slice(0, 8).join(", ")}.`
-      : "Local fallback score based on limited keyword overlap between your profile and this job.";
+      ? `Profile alignment: shared skills include ${matches.slice(0, 8).join(", ")}.`
+      : "Profile alignment: limited keyword overlap with your saved profile.",
+    expectationMatches.length > 0
+      ? `Expectation match: the JD reflects ${expectationMatches.slice(0, 6).join(", ")}.`
+      : "Expectation match: add clearer expectations to improve this evaluation.",
+  ].join(" ");
 
   return { score, reason };
 }
@@ -130,67 +145,16 @@ function getClient() {
 export type ScoreResult = z.infer<typeof ScoreSchema>;
 export type CoverLetterResult = z.infer<typeof CoverLetterSchema>;
 
-type CompletionMessage = {
-  parsed?: unknown;
-  content?:
-    | string
-    | null
-    | Array<{ type?: string; text?: string | { value?: string } }>;
-};
-
-type CompletionLike = {
-  choices?: Array<{
-    message?: CompletionMessage;
-  }>;
-};
-
-function extractTextContent(content: CompletionMessage["content"]) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return null;
-
-  const text = content
-    .map((part) => {
-      if (typeof part?.text === "string") return part.text;
-      if (typeof part?.text?.value === "string") return part.text.value;
-      return "";
-    })
-    .join("")
-    .trim();
-
-  return text || null;
-}
-
 function parseStructuredOutput<T>(
   completion: CompletionLike,
   schema?: z.ZodType<T>,
 ): T {
-  const message = completion.choices?.[0]?.message;
-  if (message?.parsed != null) {
-    return schema ? schema.parse(message.parsed) : (message.parsed as T);
-  }
-
-  const rawContent = extractTextContent(message?.content);
-  if (!rawContent) {
-    throw new Error("No structured result returned by model");
-  }
-
-  let parsed: unknown;
-  try {
-    // Strip markdown code fences if present
-    const jsonStr = rawContent
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```\s*$/, "")
-      .trim();
-    parsed = JSON.parse(jsonStr);
-  } catch {
-    throw new Error("No structured result returned by model");
-  }
-
-  return schema ? schema.parse(parsed) : (parsed as T);
+  return parseStructuredCompletion(completion, schema);
 }
 
 export const __testables = {
   parseStructuredOutput,
+  buildScorePrompt,
 };
 
 async function callWithRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
@@ -219,9 +183,10 @@ export async function scoreJob(
     location?: string | null;
     description?: string | null;
   },
+  expectations?: string,
 ): Promise<ScoreResult> {
   const client = getClient();
-  if (!client) return scoreLocally(profile, job);
+  if (!client) return scoreLocally(profile, job, expectations);
 
   const completion = await callWithRetry(() =>
     client.chat.completions.create({
@@ -229,22 +194,44 @@ export async function scoreJob(
       messages: [
         {
           role: "user",
-          content: `Rate how well this job matches the candidate profile. Return valid JSON only with this shape: {"score": number, "reason": string}. Score must be an integer from 0 to 100.
-
-        Candidate profile:
-        ${profile}
-
-        Job:
-        Title: ${job.title}
-        Company: ${job.company ?? "Unknown"}
-        Location: ${job.location ?? "Unknown"}
-        Description: ${job.description ?? "No description"}`,
+          content: buildScorePrompt(profile, job, expectations),
         },
       ],
     }),
   );
 
   return parseStructuredOutput(completion, ScoreSchema);
+}
+
+function buildScorePrompt(
+  profile: string,
+  job: {
+    title: string;
+    company?: string | null;
+    location?: string | null;
+    description?: string | null;
+  },
+  expectations?: string,
+) {
+  return `Evaluate this JD against the candidate profile and candidate expectations. Return valid JSON only with this shape: {"score": number, "reason": string}. Score must be an integer from 0 to 100.
+
+The reason must be a concise JD evaluation, not a generic summary. Include:
+- expectation fit: whether the JD matches what the candidate wants
+- profile alignment: strongest matching skills or experience
+- gaps or risks: missing skills, seniority mismatch, unclear role scope, or weak JD evidence
+- next action: why this job should be applied to, reviewed, or ignored
+
+Candidate profile:
+${profile}
+
+Candidate expectations:
+${expectations?.trim() || "Use the candidate profile as the expectation baseline."}
+
+Job:
+Title: ${job.title}
+Company: ${job.company ?? "Unknown"}
+Location: ${job.location ?? "Unknown"}
+Description: ${job.description ?? "No description"}`;
 }
 
 export async function generateCoverLetter(

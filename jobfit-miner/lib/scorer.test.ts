@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { __testables } from "./scorer";
+import { __testables } from "./scorer.ts";
 
 test("parseStructuredOutput returns parsed payload when SDK parsed output is present", () => {
   const result = __testables.parseStructuredOutput<{ score: number }>({
@@ -56,4 +56,23 @@ test("parseStructuredOutput throws when provider response has no usable structur
       }),
     /No structured result/,
   );
+});
+
+test("buildScorePrompt asks the core AI scorer to evaluate JD expectations", () => {
+  const prompt = __testables.buildScorePrompt(
+    "React, Node.js, TypeScript",
+    {
+      title: "Fullstack Engineer",
+      company: "Acme",
+      location: "Remote",
+      description: "Own product requirements and build APIs.",
+    },
+    "I prefer product-minded roles with modern TypeScript stacks.",
+  );
+
+  assert.match(prompt, /evaluate this JD/i);
+  assert.match(prompt, /Candidate expectations/i);
+  assert.match(prompt, /product-minded roles/i);
+  assert.match(prompt, /Return valid JSON only/);
+  assert.match(prompt, /expectation fit/i);
 });

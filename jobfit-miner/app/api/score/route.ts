@@ -1,9 +1,11 @@
 import { z } from "zod";
-import { getRankedJobs, updateScore } from "@/lib/repository";
+import { getJobsByIds, getRankedJobs, updateScore } from "@/lib/repository";
 import { scoreJob } from "@/lib/scorer";
 
 const bodySchema = z.object({
   profile: z.string().min(1),
+  expectations: z.string().min(1).optional(),
+  jobIds: z.array(z.number().int().positive()).optional(),
 });
 
 export async function POST(req: Request) {
@@ -14,8 +16,8 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.message }, { status: 400 });
   }
 
-  const { profile } = parsed.data;
-  const jobs = await getRankedJobs();
+  const { profile, expectations, jobIds } = parsed.data;
+  const jobs = jobIds?.length ? await getJobsByIds(jobIds) : await getRankedJobs();
 
   if (jobs.length === 0) {
     return Response.json(
@@ -27,7 +29,7 @@ export async function POST(req: Request) {
   const jobsToScore = jobs.slice(0, 20);
   const results = [];
   for (const job of jobsToScore) {
-    const { score, reason } = await scoreJob(profile, job);
+    const { score, reason } = await scoreJob(profile, job, expectations);
     results.push(await updateScore(job.id, score, reason));
   }
 

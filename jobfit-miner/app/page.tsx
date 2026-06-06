@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Job = {
   id: number;
@@ -12,6 +12,7 @@ type Job = {
   description: string | null;
   score: number | null;
   reason: string | null;
+  createdAt?: string;
 };
 
 type Step = 1 | 2 | 3 | 4;
@@ -134,11 +135,35 @@ function JobCard({
         {job.score !== null && <ScoreBadge score={job.score} />}
       </div>
 
-      {job.reason && (
-        <p className="text-xs text-orange-700 italic leading-relaxed">
-          &ldquo;{job.reason}&rdquo;
+      <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-stone-500">
+            AI JD evaluation
+          </p>
+          <span className="rounded-full bg-white border border-stone-200 px-2 py-0.5 text-[10px] font-bold text-orange-600">
+            {job.score === null
+              ? "Needs evaluation"
+              : job.score >= 70
+                ? "Strong expectation match"
+                : job.score >= 40
+                  ? "Partial expectation match"
+                  : "Low expectation match"}
+          </span>
+        </div>
+        <p className="text-xs text-stone-700 leading-relaxed">
+          {job.reason ??
+            "Score this saved JD to let the core AI API evaluate expectations, profile alignment, gaps, and next action."}
         </p>
-      )}
+        <div className="border-t border-stone-200 pt-2">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-stone-400">
+            JD snapshot
+          </p>
+          <p className="mt-1 text-xs text-stone-600 leading-relaxed">
+            {job.description?.replace(/\s+/g, " ").trim().slice(0, 240) ||
+              "No JD description was captured yet."}
+          </p>
+        </div>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
         <a
@@ -186,14 +211,47 @@ export default function Home() {
   const [location, setLocation] = useState("ho-chi-minh-hcm");
   const [profile, setProfile] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [coverLetters, setCoverLetters] = useState<Record<number, string>>({});
   const [loadingMine, setLoadingMine] = useState(false);
   const [loadingScore, setLoadingScore] = useState(false);
+  const [loadingSavedJobs, setLoadingSavedJobs] = useState(false);
   const [loadingCover, setLoadingCover] = useState<Record<number, boolean>>({});
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [duplicateCount, setDuplicateCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadSavedJobs() {
+      setLoadingSavedJobs(true);
+      try {
+        const res = await fetch("/api/jobs");
+        const data = await res.json();
+        if (res.ok) setSavedJobs(data.jobs);
+      } finally {
+        setLoadingSavedJobs(false);
+      }
+    }
+
+    void loadSavedJobs();
+  }, []);
+
+  async function refreshSavedJobs() {
+    setLoadingSavedJobs(true);
+    try {
+      const res = await fetch("/api/jobs");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not load saved jobs");
+      setSavedJobs(data.jobs);
+    } finally {
+      setLoadingSavedJobs(false);
+    }
+  }
 
   async function mine() {
     setError(null);
+    setNotice(null);
     setLoadingMine(true);
     setCurrentStep(2);
     try {
@@ -205,7 +263,16 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Mine failed");
       setJobs(data.jobs);
-      setCurrentStep(3);
+      setDuplicateCount(data.existingCount ?? 0);
+      await refreshSavedJobs();
+      if (data.existingCount > 0) {
+        setNotice(
+          `Ignored ${data.existingCount} already saved job${
+            data.existingCount === 1 ? "" : "s"
+          }. You can view them in Saved jobs.`,
+        );
+      }
+      setCurrentStep(data.jobs.length > 0 ? 3 : 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Mine failed");
       setCurrentStep(1);
@@ -225,7 +292,11 @@ export default function Home() {
       const res = await fetch("/api/score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile }),
+        body: JSON.stringify({
+          profile,
+          expectations: profile,
+          jobIds: jobs.map((job) => job.id),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Score failed");
@@ -271,6 +342,8 @@ export default function Home() {
     setCurrentStep(1);
     setJobs([]);
     setCoverLetters({});
+    setDuplicateCount(0);
+    setNotice(null);
     setError(null);
   }
 
@@ -308,6 +381,51 @@ export default function Home() {
 
       {/* Stepper */}
       <Stepper current={currentStep} />
+
+      <div className="bg-white border border-stone-200 rounded-xl px-5 py-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold text-stone-900">Saved jobs</h2>
+            <p className="text-xs text-stone-500 mt-0.5">
+              {loadingSavedJobs
+                ? "Loading your job archive..."
+                : `${savedJobs.length} job${savedJobs.length === 1 ? "" : "s"} stored in the database`}
+            </p>
+          </div>
+          <button
+            onClick={() => setHistoryOpen((prev) => !prev)}
+            className="text-xs font-bold text-orange-600 border border-orange-200 bg-orange-50 rounded-lg px-3 py-2 hover:bg-orange-100"
+          >
+            {historyOpen ? "Hide History" : "View History"}
+          </button>
+        </div>
+
+        {historyOpen && (
+          <div className="border-t border-stone-100 pt-3 space-y-3">
+            {savedJobs.length === 0 && (
+              <p className="text-sm text-stone-400 italic">
+                No saved jobs yet. Mine once and new matches will appear here.
+              </p>
+            )}
+            {savedJobs.map((job) => (
+              <JobCard
+                key={job.id}
+                job={job}
+                coverLetter={coverLetters[job.id]}
+                loading={loadingCover[job.id] ?? false}
+                onGenerate={() => generateCoverLetter(job)}
+                isTop={(job.score ?? -1) >= 70}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {notice && (
+        <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+          {notice}
+        </p>
+      )}
 
       {/* Step 1: Configure */}
       {currentStep === 1 && (
@@ -452,6 +570,13 @@ export default function Home() {
           <div className="inline-flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-sm text-orange-700 font-semibold">
             ⛏ {jobs.length} job{jobs.length !== 1 ? "s" : ""} mined
           </div>
+
+          {duplicateCount > 0 && (
+            <div className="inline-flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-600 font-semibold">
+              {duplicateCount} already saved job
+              {duplicateCount !== 1 ? "s" : ""} ignored
+            </div>
+          )}
 
           {jobs.length > 0 && (
             <div className="space-y-1.5">

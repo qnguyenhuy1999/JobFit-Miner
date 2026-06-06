@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import { extractJobsWithConfiguredAi } from "@/lib/ai-job-miner";
 import type { JobCrawler, JobItem } from "@/lib/types";
 
 type ScrapedJob = {
@@ -9,12 +10,22 @@ type ScrapedJob = {
   description: string;
 };
 
+type ScrapeResult = {
+  jobs: ScrapedJob[];
+  pageUrl: string;
+  html: string;
+};
+
+function toAbsoluteUrl(url: string, baseUrl: string) {
+  return new URL(url, baseUrl).toString();
+}
+
 async function scrapeJobs(
   siteUrl: string,
   keyword: string,
   location?: string,
   headless = true,
-) {
+): Promise<ScrapeResult> {
   const browser = await chromium.launch({ headless });
   const page = await browser.newPage();
 
@@ -75,10 +86,38 @@ async function scrapeJobs(
         .slice(0, 20);
     });
 
-    return jobs;
+    const html = await page.locator("body").evaluate((body) => body.innerHTML);
+    return { jobs, pageUrl: searchUrl, html };
   } finally {
     await browser.close();
   }
+}
+
+async function mineWithAiFallback(
+  siteUrl: string,
+  keyword: string,
+  location: string | undefined,
+  scrapeResult: ScrapeResult,
+): Promise<JobItem[]> {
+  if (scrapeResult.jobs.length > 0) {
+    return scrapeResult.jobs.map((job) => ({
+      site: "itviec",
+      title: job.title,
+      company: job.company || undefined,
+      location: job.location || undefined,
+      url: toAbsoluteUrl(job.url, scrapeResult.pageUrl),
+      description: job.description || undefined,
+    }));
+  }
+
+  return extractJobsWithConfiguredAi({
+    site: "itviec",
+    siteUrl,
+    pageUrl: scrapeResult.pageUrl,
+    keyword,
+    location,
+    html: scrapeResult.html,
+  });
 }
 
 export const itviecCrawler: JobCrawler = {
@@ -92,21 +131,14 @@ export const itviecCrawler: JobCrawler = {
     location?: string,
   ): Promise<JobItem[]> {
     const preferHeadful = process.env.PLAYWRIGHT_HEADFUL === "1";
-    const jobs = preferHeadful
+    const result = preferHeadful
       ? await scrapeJobs(siteUrl, keyword, location, false)
       : await scrapeJobs(siteUrl, keyword, location, true);
-    const resolvedJobs =
-      jobs.length > 0 || preferHeadful
-        ? jobs
+    const resolvedResult =
+      result.jobs.length > 0 || preferHeadful
+        ? result
         : await scrapeJobs(siteUrl, keyword, location, false);
 
-    return resolvedJobs.map((job) => ({
-      site: "itviec",
-      title: job.title,
-      company: job.company || undefined,
-      location: job.location || undefined,
-      url: job.url,
-      description: job.description || undefined,
-    }));
+    return mineWithAiFallback(siteUrl, keyword, location, resolvedResult);
   },
 };

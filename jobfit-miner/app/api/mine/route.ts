@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { mineJobs } from "@/crawlers";
-import { upsertJobs } from "@/lib/repository";
+import { saveNewJobs } from "@/lib/repository";
 
 const bodySchema = z.object({
   siteUrl: z.string().url(),
@@ -19,7 +19,11 @@ export async function POST(req: Request) {
   const { siteUrl, keyword, location } = parsed.data;
 
   const items = await mineJobs(siteUrl, keyword, location);
-  const jobs = await upsertJobs(items);
+  const { jobs, existingJobs } = await saveNewJobs(items);
 
-  return Response.json({ jobs, count: jobs.length });
+  return Response.json({
+    jobs,
+    count: jobs.length,
+    existingCount: existingJobs.length,
+  });
 }

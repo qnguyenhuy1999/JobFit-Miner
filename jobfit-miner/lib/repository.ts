@@ -1,18 +1,23 @@
 import { prisma } from "./prisma";
+import { splitJobsByKnownUrls } from "./job-deduper";
 import type { JobItem } from "./types";
 
-export async function upsertJobs(jobs: JobItem[]) {
-  const results = await Promise.all(
-    jobs.map((job) =>
-      prisma.job.upsert({
-        where: { url: job.url },
-        update: {
-          title: job.title,
-          company: job.company,
-          location: job.location,
-          description: job.description,
-        },
-        create: {
+export async function saveNewJobs(jobs: JobItem[]) {
+  const incomingUrls = [...new Set(jobs.map((job) => job.url))];
+  const storedJobs = await prisma.job.findMany({
+    where: { url: { in: incomingUrls } },
+    select: { url: true },
+  });
+
+  const { newJobs, existingJobs } = splitJobsByKnownUrls(
+    jobs,
+    storedJobs.map((job) => job.url),
+  );
+
+  const savedJobs = await Promise.all(
+    newJobs.map((job) =>
+      prisma.job.create({
+        data: {
           site: job.site,
           title: job.title,
           company: job.company,
@@ -20,10 +25,29 @@ export async function upsertJobs(jobs: JobItem[]) {
           url: job.url,
           description: job.description,
         },
-      })
-    )
+      }),
+    ),
   );
-  return results;
+
+  return { jobs: savedJobs, existingJobs };
+}
+
+export async function upsertJobs(jobs: JobItem[]) {
+  const result = await saveNewJobs(jobs);
+  return result.jobs;
+}
+
+export async function getJobsByIds(ids: number[]) {
+  return prisma.job.findMany({
+    where: { id: { in: ids } },
+    orderBy: [{ score: "desc" }, { createdAt: "desc" }],
+  });
+}
+
+export async function getSavedJobs() {
+  return prisma.job.findMany({
+    orderBy: [{ createdAt: "desc" }],
+  });
 }
 
 export async function getRankedJobs() {
@@ -35,10 +59,14 @@ export async function getRankedJobs() {
 export async function updateScore(
   id: number,
   score: number,
-  reason: string
+  reason: string,
 ) {
   return prisma.job.update({
     where: { id },
     data: { score, reason },
   });
 }
+
+export const __testables = {
+  splitJobsByKnownUrls,
+};

@@ -24,6 +24,7 @@ export async function POST(req: Request) {
     siteUrl,
     keyword,
     profile,
+    expectations,
     location,
     limit = 20,
   } = parsed.data;
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
   // Score each job sequentially to keep provider requests predictable.
   for (const job of upserted) {
     try {
-      const { score, reason } = await scoreJob(profile, job);
+      const { score, reason } = await scoreJob(profile, job, expectations);
       await updateScore(job.id, score, reason);
     } catch {
       await updateScore(job.id, 0, "Scoring failed for this job.");
