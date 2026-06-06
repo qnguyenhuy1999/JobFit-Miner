@@ -18,10 +18,13 @@ export async function POST(req: Request) {
   const jobs = await getRankedJobs();
 
   if (jobs.length === 0) {
-    return Response.json({ error: "No jobs to score. Mine jobs first." }, { status: 400 });
+    return Response.json(
+      { error: "No jobs to score. Mine jobs first." },
+      { status: 400 },
+    );
   }
 
-  const jobsToScore = jobs.slice(0, 10);
+  const jobsToScore = jobs.slice(0, 20);
   const results = [];
   for (const job of jobsToScore) {
     const { score, reason } = await scoreJob(profile, job);

@@ -7,7 +7,9 @@ export const linkedinCrawler: JobCrawler = {
     return url.includes("linkedin.com");
   },
 
-  async mine(_siteUrl: string, _keyword: string) {
+  async mine(siteUrl: string, keyword: string) {
+    void siteUrl;
+    void keyword;
     throw new Error(
       "LinkedIn crawler not yet implemented. Use itviec.com for now."
     );

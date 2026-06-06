@@ -50,7 +50,7 @@ async function scrapeJobs(
               card
                 .querySelector("img[alt*='Logo']")
                 ?.getAttribute("alt")
-                .replace(/\s+Vietnam.+$/, ""),
+                ?.replace(/\s+Vietnam.+$/, ""),
             );
 
           const textParts = [...card.querySelectorAll("*")]

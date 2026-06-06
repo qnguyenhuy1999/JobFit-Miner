@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { __testables } from "./scorer.ts";
+import { __testables } from "./scorer";
 
 test("parseStructuredOutput returns parsed payload when SDK parsed output is present", () => {
   const result = __testables.parseStructuredOutput<{ score: number }>({

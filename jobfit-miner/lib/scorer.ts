@@ -132,7 +132,10 @@ export type CoverLetterResult = z.infer<typeof CoverLetterSchema>;
 
 type CompletionMessage = {
   parsed?: unknown;
-  content?: string | Array<{ type?: string; text?: string | { value?: string } }>;
+  content?:
+    | string
+    | null
+    | Array<{ type?: string; text?: string | { value?: string } }>;
 };
 
 type CompletionLike = {
@@ -157,7 +160,10 @@ function extractTextContent(content: CompletionMessage["content"]) {
   return text || null;
 }
 
-function parseStructuredOutput<T>(completion: CompletionLike, schema?: z.ZodType<T>): T {
+function parseStructuredOutput<T>(
+  completion: CompletionLike,
+  schema?: z.ZodType<T>,
+): T {
   const message = completion.choices?.[0]?.message;
   if (message?.parsed != null) {
     return schema ? schema.parse(message.parsed) : (message.parsed as T);
@@ -171,7 +177,10 @@ function parseStructuredOutput<T>(completion: CompletionLike, schema?: z.ZodType
   let parsed: unknown;
   try {
     // Strip markdown code fences if present
-    const jsonStr = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+    const jsonStr = rawContent
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/, "")
+      .trim();
     parsed = JSON.parse(jsonStr);
   } catch {
     throw new Error("No structured result returned by model");
@@ -189,7 +198,9 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
     try {
       return await fn();
     } catch (err) {
-      const is429 = err instanceof Error && (err.message.includes("429") || err.message.includes("concurrent"));
+      const is429 =
+        err instanceof Error &&
+        (err.message.includes("429") || err.message.includes("concurrent"));
       if (is429 && i < retries - 1) {
         await new Promise((r) => setTimeout(r, 5000 * (i + 1)));
         continue;
@@ -214,7 +225,7 @@ export async function scoreJob(
 
   const completion = await callWithRetry(() =>
     client.chat.completions.create({
-      model: "glm-4.7-flash",
+      model: "kr/claude-haiku-4.5",
       messages: [
         {
           role: "user",
@@ -230,7 +241,7 @@ export async function scoreJob(
         Description: ${job.description ?? "No description"}`,
         },
       ],
-    })
+    }),
   );
 
   return parseStructuredOutput(completion, ScoreSchema);
@@ -244,7 +255,7 @@ export async function generateCoverLetter(
   if (!client) return generateCoverLetterLocally(profile, job);
 
   const completion = await client.chat.completions.create({
-    model: "glm-4.7-flash",
+    model: "kr/claude-haiku-4.5",
     messages: [
       {
         role: "user",
