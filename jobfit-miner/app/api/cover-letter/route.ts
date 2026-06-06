@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { generateCoverLetter } from "@/lib/scorer";
+import { generateCoverLetter, type CoverLetterStyle, type MessageType } from "@/lib/scorer";
 
 const bodySchema = z.object({
   profile: z.string().min(1),
@@ -8,6 +8,8 @@ const bodySchema = z.object({
     company: z.string().nullable().optional(),
     description: z.string().nullable().optional(),
   }),
+  style: z.enum(["professional", "friendly", "short", "startup", "corporate", "vietnamese", "bilingual"]).optional(),
+  messageType: z.enum(["cover_letter", "recruiter_message", "linkedin_message", "email_application", "resume_tips"]).optional(),
 });
 
 export async function POST(req: Request) {
@@ -18,8 +20,13 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.message }, { status: 400 });
   }
 
-  const { profile, job } = parsed.data;
-  const coverLetter = await generateCoverLetter(profile, job);
+  const { profile, job, style, messageType } = parsed.data;
+  const coverLetter = await generateCoverLetter(
+    profile,
+    job,
+    (style as CoverLetterStyle) ?? "professional",
+    (messageType as MessageType) ?? "cover_letter",
+  );
 
   return Response.json({ coverLetter });
 }

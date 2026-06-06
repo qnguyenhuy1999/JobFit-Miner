@@ -8,16 +8,38 @@ datasource db {
 }
 
 model Job {
-  id          Int      @id @default(autoincrement())
-  site        String
-  title       String
-  company     String?
-  location    String?
-  url         String   @unique
-  description String?
-  score       Int?
-  reason      String?
-  createdAt   DateTime @default(now())
+  id                 Int      @id @default(autoincrement())
+  site               String
+  title              String
+  company            String?
+  location           String?
+  url                String   @unique
+  description        String?
+  salary             String?
+  workMode           String?
+  benefits           String?
+  score              Int?
+  fitLevel           String?
+  reason             String?
+  matchedSkills      String?
+  missingSkills      String?
+  expectationMatches String?
+  redFlags           String?
+  status             String   @default("new")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
+}
+
+model MiningRun {
+  id        Int      @id @default(autoincrement())
+  keywords  String
+  site      String
+  location  String?
+  filters   String?
+  found     Int      @default(0)
+  scored    Int      @default(0)
+  errors    String?
+  createdAt DateTime @default(now())
 }
 
 model CandidateProfile {

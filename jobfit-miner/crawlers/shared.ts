@@ -32,11 +32,20 @@ export type PublicCrawlerConfig = {
   search(page: Page, keyword: string, location?: string): Promise<void>;
 };
 
-const DEFAULT_USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
+export const CRAWLER_CONFIG = {
+  maxJobsPerRun: 20,
+  pageTimeoutMs: 30_000,
+  postLoadDelayMs: 5_000,
+  blockRetries: 4,
+  blockRetryDelayMs: 5_000,
+  userAgent:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+} as const;
+
+const DEFAULT_USER_AGENT = CRAWLER_CONFIG.userAgent;
 
 async function waitForAccessibleResults(page: Page) {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < CRAWLER_CONFIG.blockRetries; attempt += 1) {
     const title = await page.title();
     const bodyText = await page
       .locator("body")
@@ -48,7 +57,7 @@ async function waitForAccessibleResults(page: Page) {
       bodyText.includes("Sorry, you have been blocked");
 
     if (!blocked) return;
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(CRAWLER_CONFIG.blockRetryDelayMs);
   }
 }
 
@@ -76,7 +85,7 @@ async function scrapeSearchResults(
   try {
     await config.search(page, keyword, location);
     await waitForAccessibleResults(page);
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(CRAWLER_CONFIG.postLoadDelayMs);
 
     const jobs = await page.evaluate((domConfig: SiteDomConfig) => {
       const normalize = (value?: string | null) =>
@@ -134,7 +143,7 @@ async function scrapeSearchResults(
           return { title, company, location, url, description };
         })
         .filter((job): job is RawJob => Boolean(job))
-        .slice(0, 20);
+        .slice(0, 20); // CRAWLER_CONFIG.maxJobsPerRun applied in caller
     }, config.dom);
 
     const html = await page.locator("body").evaluate((body) => body.innerHTML);

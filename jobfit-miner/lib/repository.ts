@@ -117,6 +117,43 @@ export async function updateScore(
   });
 }
 
+export async function updateJobAnalysis(
+  id: number,
+  analysis: {
+    score: number;
+    fitLevel: string;
+    reason: string;
+    matchedSkills: string[];
+    missingSkills: string[];
+    expectationMatches: Record<string, boolean | "unknown">;
+    redFlags: string[];
+  },
+) {
+  return prisma.job.update({
+    where: { id },
+    data: {
+      score: analysis.score,
+      fitLevel: analysis.fitLevel,
+      reason: analysis.reason,
+      matchedSkills: JSON.stringify(analysis.matchedSkills),
+      missingSkills: JSON.stringify(analysis.missingSkills),
+      expectationMatches: JSON.stringify(analysis.expectationMatches),
+      redFlags: JSON.stringify(analysis.redFlags),
+    },
+  });
+}
+
+export async function recordMiningRun(run: {
+  keywords: string;
+  site: string;
+  location?: string;
+  found: number;
+  scored: number;
+  errors?: string;
+}) {
+  return prisma.miningRun.create({ data: run });
+}
+
 export const __testables = {
   splitJobsByKnownUrls,
 };

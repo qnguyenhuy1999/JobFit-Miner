@@ -5,6 +5,8 @@ export type JobListParams = {
   site: string;
   location: string;
   minScore: number | null;
+  status: string;
+  hideRejected: boolean;
 };
 
 export function normalizeJobListParams(
@@ -25,14 +27,13 @@ export function normalizeJobListParams(
 
   return {
     page: Number.isFinite(page) && page > 0 ? page : 1,
-    pageSize:
-      Number.isFinite(pageSize) && pageSize > 0
-        ? Math.min(pageSize, 50)
-        : 10,
+    pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 50) : 10,
     query: read("query").trim(),
     site: read("site").trim(),
     location: read("location").trim(),
     minScore: Number.isFinite(minScore) ? minScore : null,
+    status: read("status").trim(),
+    hideRejected: read("hideRejected") === "1",
   };
 }
 
@@ -49,6 +50,14 @@ export function buildJobListWhere(params: JobListParams) {
 
   if (params.minScore !== null) {
     where.score = { gte: params.minScore };
+  }
+
+  if (params.status) {
+    where.status = params.status;
+  }
+
+  if (params.hideRejected) {
+    where.status = { notIn: ["rejected", "ignored"] };
   }
 
   if (params.query) {

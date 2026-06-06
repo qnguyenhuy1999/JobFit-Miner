@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { mineJobs } from "@/crawlers";
-import { getRankedJobs, updateScore, upsertJobs } from "@/lib/repository";
+import { getRankedJobs, updateJobAnalysis, upsertJobs, recordMiningRun } from "@/lib/repository";
 import { scoreJob } from "@/lib/scorer";
 
 const bodySchema = z.object({
@@ -53,14 +53,32 @@ export async function POST(req: Request) {
   const upsertedIds = new Set(upserted.map((j) => j.id));
 
   // Score each job sequentially to keep provider requests predictable.
+  let scored = 0;
   for (const job of upserted) {
     try {
-      const { score, reason } = await scoreJob(profile, job, expectations);
-      await updateScore(job.id, score, reason);
+      const analysis = await scoreJob(profile, job, expectations);
+      await updateJobAnalysis(job.id, analysis);
+      scored++;
     } catch {
-      await updateScore(job.id, 0, "Scoring failed for this job.");
+      await updateJobAnalysis(job.id, {
+        score: 0,
+        fitLevel: "low",
+        reason: "Scoring failed for this job.",
+        matchedSkills: [],
+        missingSkills: [],
+        expectationMatches: {},
+        redFlags: [],
+      });
     }
   }
+
+  await recordMiningRun({
+    keywords: keyword,
+    site: new URL(siteUrl).hostname,
+    location,
+    found: upserted.length,
+    scored,
+  });
 
   const ranked = await getRankedJobs();
   const result = ranked.filter((j) => upsertedIds.has(j.id));

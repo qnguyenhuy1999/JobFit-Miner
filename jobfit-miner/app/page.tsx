@@ -13,7 +13,14 @@ type Job = {
   url: string;
   description: string | null;
   score: number | null;
+  fitLevel: string | null;
   reason: string | null;
+  matchedSkills: string | null;
+  missingSkills: string | null;
+  redFlags: string | null;
+  salary: string | null;
+  workMode: string | null;
+  status: string;
   createdAt?: string;
 };
 
@@ -116,18 +123,80 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
+function parseJsonArray(value: string | null): string[] {
+  if (!value) return [];
+  try { return JSON.parse(value) as string[]; } catch { return []; }
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-1">
+      <span className="text-stone-400 shrink-0 w-20">{label}</span>
+      <span className="text-stone-700">{value}</span>
+    </div>
+  );
+}
+
+const COVER_STYLES = ["professional", "friendly", "short", "startup", "corporate", "vietnamese", "bilingual"] as const;
+const MESSAGE_TYPES = [
+  { value: "cover_letter", label: "Cover letter" },
+  { value: "recruiter_message", label: "Recruiter msg" },
+  { value: "linkedin_message", label: "LinkedIn msg" },
+  { value: "email_application", label: "Email application" },
+  { value: "resume_tips", label: "Resume tips" },
+] as const;
+
+function CoverLetterControls({ job, coverLetter, loading, onGenerate }: {
+  job: Job;
+  coverLetter?: string;
+  loading: boolean;
+  onGenerate: (style: string, messageType: string) => void;
+}) {
+  const [style, setStyle] = useState<string>("professional");
+  const [messageType, setMessageType] = useState<string>("cover_letter");
+
+  if (coverLetter) {
+    return (
+      <span className="text-xs bg-orange-50 border border-orange-200 text-orange-700 rounded-md px-2.5 py-1 opacity-60">
+        ✉ Generated ▾
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <select value={style} onChange={(e) => setStyle(e.target.value)}
+        className="text-xs border border-stone-200 rounded-md px-2 py-1 bg-stone-50 text-stone-700 outline-none focus:border-orange-400">
+        {COVER_STYLES.map((s) => <option key={s} value={s} className="capitalize">{s}</option>)}
+      </select>
+      <select value={messageType} onChange={(e) => setMessageType(e.target.value)}
+        className="text-xs border border-stone-200 rounded-md px-2 py-1 bg-stone-50 text-stone-700 outline-none focus:border-orange-400">
+        {MESSAGE_TYPES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+      </select>
+      <button onClick={() => onGenerate(style, messageType)} disabled={loading}
+        className="text-xs bg-orange-50 border border-orange-200 text-orange-700 rounded-md px-2.5 py-1 hover:bg-orange-100 disabled:opacity-50">
+        {loading ? "Generating…" : "✉ Generate"}
+      </button>
+    </div>
+  );
+}
+
 function JobCard({
   job,
   coverLetter,
   loading,
   onGenerate,
   isTop,
+  compareSelected,
+  onToggleCompare,
 }: {
   job: Job;
   coverLetter?: string;
   loading: boolean;
-  onGenerate: () => void;
+  onGenerate: (style: string, messageType: string) => void;
   isTop: boolean;
+  compareSelected?: boolean;
+  onToggleCompare?: () => void;
 }) {
   return (
     <div
@@ -183,28 +252,16 @@ function JobCard({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
-        <a
-          href={job.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-orange-500 font-semibold hover:underline"
-        >
+        <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-xs text-orange-500 font-semibold hover:underline">
           View job ↗
         </a>
-        {!coverLetter && (
-          <button
-            onClick={onGenerate}
-            disabled={loading}
-            className="text-xs bg-orange-50 border border-orange-200 text-orange-700 rounded-md px-2.5 py-1 hover:bg-orange-100 disabled:opacity-50"
-          >
-            {loading ? "Generating…" : "✉ Generate cover letter"}
-          </button>
+        {onToggleCompare && (
+          <label className="flex items-center gap-1 text-xs text-stone-500 cursor-pointer">
+            <input type="checkbox" checked={compareSelected} onChange={onToggleCompare} className="accent-orange-500" />
+            Compare
+          </label>
         )}
-        {coverLetter && (
-          <span className="text-xs bg-orange-50 border border-orange-200 text-orange-700 rounded-md px-2.5 py-1 opacity-60">
-            ✉ Cover letter ▾
-          </span>
-        )}
+        <CoverLetterControls job={job} coverLetter={coverLetter} loading={loading} onGenerate={onGenerate} />
       </div>
 
       {coverLetter && (
@@ -378,7 +435,17 @@ export default function Home() {
     }
   }
 
-  async function generateCoverLetter(job: Job) {
+  const [compareIds, setCompareIds] = useState<Set<number>>(new Set());
+
+  function toggleCompare(id: number) {
+    setCompareIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else if (next.size < 3) { next.add(id); }
+      return next;
+    });
+  }
+
+  async function generateCoverLetter(job: Job, style = "professional", messageType = "cover_letter") {
     if (!profile.trim()) {
       setError("Enter your profile to generate a cover letter.");
       return;
@@ -390,11 +457,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           profile,
-          job: {
-            title: job.title,
-            company: job.company,
-            description: job.description,
-          },
+          job: { title: job.title, company: job.company, description: job.description },
+          style,
+          messageType,
         }),
       });
       const data = await res.json();
@@ -467,7 +532,7 @@ export default function Home() {
                 job={job}
                 coverLetter={coverLetters[job.id]}
                 loading={loadingCover[job.id] ?? false}
-                onGenerate={() => generateCoverLetter(job)}
+                onGenerate={(s, m) => generateCoverLetter(job, s, m)}
                 isTop={(job.score ?? -1) >= 70}
               />
             ))}
@@ -791,8 +856,10 @@ export default function Home() {
                   job={job}
                   coverLetter={coverLetters[job.id]}
                   loading={loadingCover[job.id] ?? false}
-                  onGenerate={() => generateCoverLetter(job)}
+                  onGenerate={(s, m) => generateCoverLetter(job, s, m)}
                   isTop
+                  compareSelected={compareIds.has(job.id)}
+                  onToggleCompare={() => toggleCompare(job.id)}
                 />
               ))}
             </div>
@@ -809,10 +876,37 @@ export default function Home() {
                   job={job}
                   coverLetter={coverLetters[job.id]}
                   loading={loadingCover[job.id] ?? false}
-                  onGenerate={() => generateCoverLetter(job)}
+                  onGenerate={(s, m) => generateCoverLetter(job, s, m)}
                   isTop={false}
+                  compareSelected={compareIds.has(job.id)}
+                  onToggleCompare={() => toggleCompare(job.id)}
                 />
               ))}
+            </div>
+          )}
+
+          {compareIds.size >= 2 && (
+            <div className="space-y-3">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-stone-400">
+                Comparison ({compareIds.size} jobs)
+              </p>
+              <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${compareIds.size}, 1fr)` }}>
+                {sortedJobs.filter((j) => compareIds.has(j.id)).map((job) => (
+                  <div key={job.id} className="border border-orange-200 rounded-xl p-3 space-y-2 text-xs">
+                    <p className="font-bold text-stone-900 text-sm">{job.title}</p>
+                    <p className="text-stone-500">{job.company ?? "-"}</p>
+                    <div className="space-y-1">
+                      <Row label="Score" value={job.score !== null ? String(job.score) : "-"} />
+                      <Row label="Fit" value={job.fitLevel ?? "-"} />
+                      <Row label="Work mode" value={job.workMode ?? "unknown"} />
+                      <Row label="Salary" value={job.salary ?? "unknown"} />
+                      <Row label="Matched" value={parseJsonArray(job.matchedSkills).slice(0, 5).join(", ") || "-"} />
+                      <Row label="Missing" value={parseJsonArray(job.missingSkills).slice(0, 5).join(", ") || "-"} />
+                      <Row label="Red flags" value={parseJsonArray(job.redFlags).join(", ") || "none"} />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

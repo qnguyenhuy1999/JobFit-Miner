@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getJobsByIds, getRankedJobs, updateScore } from "@/lib/repository";
+import { getJobsByIds, getRankedJobs, updateJobAnalysis } from "@/lib/repository";
 import { scoreJob } from "@/lib/scorer";
 
 const bodySchema = z.object({
@@ -29,8 +29,8 @@ export async function POST(req: Request) {
   const jobsToScore = jobs.slice(0, 20);
   const results = [];
   for (const job of jobsToScore) {
-    const { score, reason } = await scoreJob(profile, job, expectations);
-    results.push(await updateScore(job.id, score, reason));
+    const analysis = await scoreJob(profile, job, expectations);
+    results.push(await updateJobAnalysis(job.id, analysis));
   }
 
   return Response.json({ jobs: results, count: results.length });

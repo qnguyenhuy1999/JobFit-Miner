@@ -1,51 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# JobFit Miner
 
-## Getting Started
+Mine jobs from Vietnamese job boards, score them against your profile with AI, and generate tailored cover letters.
 
-Create your local env file first:
-
-```bash
-cp .env.example .env.local
-```
-
-Supported OpenAI env vars:
+## Setup
 
 ```bash
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_BASE_URL=
-```
-
-Set `OPENAI_BASE_URL` when you want the app to call a custom OpenAI-compatible endpoint instead of the default `https://api.openai.com/v1`.
-
-First, run the development server:
-
-```bash
+cp .env.example .env
+# edit .env and fill in your values
+npm install
+npx prisma migrate dev
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | Yes | SQLite path, e.g. `file:./dev.db` |
+| `OPENAI_API_KEY` | No | Enables AI scoring + cover letters. Falls back to local keyword scoring without it. |
+| `OPENAI_BASE_URL` | No | Override the API base URL for compatible providers. |
+| `PLAYWRIGHT_HEADFUL` | No | Set to `1` to open a visible browser window when crawling (useful for debugging). |
 
-## Learn More
+## Supported job sites
 
-To learn more about Next.js, take a look at the following resources:
+- **ITviec** — `https://itviec.com`
+- **TopCV** — `https://www.topcv.vn`
+- **VietnamWorks** — `https://www.vietnamworks.com`
+- **LinkedIn** — `https://www.linkedin.com` (public listings only)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Features
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- 4-step wizard: configure → mine → score → results
+- AI scoring with structured output: score, fit level, matched/missing skills, expectation matches, red flags
+- Multi-style cover letter + recruiter/LinkedIn/email message generation
+- Job status tracking: new / saved / interested / applied / rejected / ignored
+- Side-by-side comparison of up to 3 jobs
+- Saved jobs page with filters: site, location, score, status, hide rejected
+- Mining run history stored per session
+- URL + fuzzy (title+company) deduplication
 
-## Deploy on Vercel
+## Limitations
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Crawlers rely on DOM selectors that may break when job sites update their HTML.
+- LinkedIn scraping is limited to public search results. No login, no session cookies.
+- No auto-submit, no auto-login, no mass apply. All applications are manual.
+- AI scoring quality depends on how well you write your profile and expectations.
+- SQLite is used for local development. Not suitable for multi-user or cloud deployment without migration to a hosted database.
+- `PLAYWRIGHT_HEADFUL=0` (headless) may be blocked by some sites. Set to `1` and solve CAPTCHAs manually if crawling fails.

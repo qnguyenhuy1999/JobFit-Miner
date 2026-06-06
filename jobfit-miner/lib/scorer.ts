@@ -5,9 +5,16 @@ import {
   parseStructuredCompletion,
 } from "./ai-completion.ts";
 
-const ScoreSchema = z.object({
+const TriState = z.union([z.boolean(), z.literal("unknown")]);
+
+const AnalysisSchema = z.object({
   score: z.number().int().min(0).max(100),
+  fitLevel: z.enum(["strong", "partial", "low"]),
   reason: z.string(),
+  matchedSkills: z.array(z.string()).default([]),
+  missingSkills: z.array(z.string()).default([]),
+  expectationMatches: z.record(z.string(), TriState).default({}),
+  redFlags: z.array(z.string()).default([]),
 });
 
 const CoverLetterSchema = z.object({
@@ -81,7 +88,7 @@ function scoreLocally(
     description?: string | null;
   },
   expectations?: string,
-): ScoreResult {
+): AnalysisResult {
   const profileTerms = buildKeywordSet(profile);
   const expectationTerms = buildKeywordSet(expectations ?? "");
   const jobText = [job.title, job.company, job.location, job.description]
@@ -89,30 +96,36 @@ function scoreLocally(
     .join(" ");
   const jobTerms = tokenize(jobText);
   const titleTerms = tokenize(job.title);
-  const matches = [...new Set(jobTerms)].filter((term) =>
-    profileTerms.has(term),
-  );
-  const expectationMatches = [...new Set(jobTerms)].filter((term) =>
-    expectationTerms.has(term),
-  );
-  const titleMatches = [...new Set(titleTerms)].filter((term) =>
-    profileTerms.has(term),
-  );
-  const baseScore =
-    25 + matches.length * 8 + titleMatches.length * 10 + expectationMatches.length * 6;
-  const score =
-    jobTerms.length === 0 ? 35 : Math.max(20, Math.min(96, baseScore));
+  const matched = [...new Set(jobTerms)].filter((t) => profileTerms.has(t));
+  const expectMatched = [...new Set(jobTerms)].filter((t) => expectationTerms.has(t));
+  const titleMatches = [...new Set(titleTerms)].filter((t) => profileTerms.has(t));
+  const baseScore = 25 + matched.length * 8 + titleMatches.length * 10 + expectMatched.length * 6;
+  const score = jobTerms.length === 0 ? 35 : Math.max(20, Math.min(96, baseScore));
+  const fitLevel: AnalysisResult["fitLevel"] = score >= 70 ? "strong" : score >= 40 ? "partial" : "low";
+
+  const profileSet = new Set(tokenize(profile));
+  const allJobTokens = new Set(jobTerms);
+  const missingSkills = [...profileSet].filter((t) => !allJobTokens.has(t)).slice(0, 6);
+
   const reason = [
-    `JD evaluation: ${score >= 70 ? "strong" : score >= 40 ? "partial" : "low"} expectation fit.`,
-    matches.length > 0
-      ? `Profile alignment: shared skills include ${matches.slice(0, 8).join(", ")}.`
-      : "Profile alignment: limited keyword overlap with your saved profile.",
-    expectationMatches.length > 0
-      ? `Expectation match: the JD reflects ${expectationMatches.slice(0, 6).join(", ")}.`
-      : "Expectation match: add clearer expectations to improve this evaluation.",
+    `Local fallback: ${fitLevel} fit.`,
+    matched.length > 0
+      ? `Shared skills: ${matched.slice(0, 8).join(", ")}.`
+      : "Limited keyword overlap with profile.",
+    expectMatched.length > 0
+      ? `Expectation terms found: ${expectMatched.slice(0, 6).join(", ")}.`
+      : "Add expectations to improve evaluation.",
   ].join(" ");
 
-  return { score, reason };
+  return {
+    score,
+    fitLevel,
+    reason,
+    matchedSkills: matched.slice(0, 10),
+    missingSkills,
+    expectationMatches: {},
+    redFlags: [],
+  };
 }
 
 function generateCoverLetterLocally(
@@ -142,7 +155,7 @@ function getClient() {
   return new OpenAI({ apiKey, baseURL });
 }
 
-export type ScoreResult = z.infer<typeof ScoreSchema>;
+export type AnalysisResult = z.infer<typeof AnalysisSchema>;
 export type CoverLetterResult = z.infer<typeof CoverLetterSchema>;
 
 function parseStructuredOutput<T>(
@@ -184,7 +197,7 @@ export async function scoreJob(
     description?: string | null;
   },
   expectations?: string,
-): Promise<ScoreResult> {
+): Promise<AnalysisResult> {
   const client = getClient();
   if (!client) return scoreLocally(profile, job, expectations);
 
@@ -200,7 +213,7 @@ export async function scoreJob(
     }),
   );
 
-  return parseStructuredOutput(completion, ScoreSchema);
+  return parseStructuredOutput(completion, AnalysisSchema);
 }
 
 function buildScorePrompt(
@@ -213,13 +226,25 @@ function buildScorePrompt(
   },
   expectations?: string,
 ) {
-  return `Evaluate this JD against the candidate profile and candidate expectations. Return valid JSON only with this shape: {"score": number, "reason": string}. Score must be an integer from 0 to 100.
+  return `Evaluate this JD against the candidate profile and candidate expectations. Return valid JSON only with this exact shape:
+{
+  "score": number (0-100),
+  "fitLevel": "strong"|"partial"|"low",
+  "reason": string,
+  "matchedSkills": string[],
+  "missingSkills": string[],
+  "expectationMatches": { "remote": true|false|"unknown", "hybrid": true|false|"unknown", "socialInsurance": true|false|"unknown", "salary": true|false|"unknown" },
+  "redFlags": string[]
+}
 
-The reason must be a concise JD evaluation, not a generic summary. Include:
-- expectation fit: whether the JD matches what the candidate wants
-- profile alignment: strongest matching skills or experience
-- gaps or risks: missing skills, seniority mismatch, unclear role scope, or weak JD evidence
-- next action: why this job should be applied to, reviewed, or ignored
+Rules:
+- score is an integer 0–100
+- fitLevel: "strong" if score>=70, "partial" if 40-69, "low" otherwise
+- reason: concise JD evaluation covering expectation fit, profile alignment, gaps/risks, next action
+- matchedSkills: skills from the profile found in the JD
+- missingSkills: skills in the profile not mentioned in the JD
+- expectationMatches: use true/false/\"unknown\" — only use false if JD explicitly contradicts, use \"unknown\" when not mentioned
+- redFlags: list any red flags (unpaid work, unclear salary, excessive overtime, relocation required, etc.)
 
 Candidate profile:
 ${profile}
@@ -234,27 +259,66 @@ Location: ${job.location ?? "Unknown"}
 Description: ${job.description ?? "No description"}`;
 }
 
+export type CoverLetterStyle =
+  | "professional"
+  | "friendly"
+  | "short"
+  | "startup"
+  | "corporate"
+  | "vietnamese"
+  | "bilingual";
+
+export type MessageType =
+  | "cover_letter"
+  | "recruiter_message"
+  | "linkedin_message"
+  | "email_application"
+  | "resume_tips";
+
+const STYLE_INSTRUCTIONS: Record<CoverLetterStyle, string> = {
+  professional: "formal, clear, concise — 3 paragraphs",
+  friendly: "warm and personable while still professional — 3 paragraphs",
+  short: "brief and direct — maximum 150 words",
+  startup: "energetic, casual, show initiative — 3 paragraphs",
+  corporate: "formal, structured, detail-oriented — 3 paragraphs",
+  vietnamese: "write in Vietnamese — 3 paragraphs",
+  bilingual: "write in both English and Vietnamese — English first, then Vietnamese",
+};
+
+const MESSAGE_INSTRUCTIONS: Record<MessageType, string> = {
+  cover_letter: "a cover letter",
+  recruiter_message: "a short direct message to the recruiter (max 100 words)",
+  linkedin_message: "a LinkedIn connection request message (max 60 words)",
+  email_application: "an email application with subject line and body",
+  resume_tips: "3-5 specific suggestions to tailor the candidate's resume for this job",
+};
+
 export async function generateCoverLetter(
   profile: string,
   job: { title: string; company?: string | null; description?: string | null },
+  style: CoverLetterStyle = "professional",
+  messageType: MessageType = "cover_letter",
 ): Promise<string> {
   const client = getClient();
   if (!client) return generateCoverLetterLocally(profile, job);
+
+  const styleNote = STYLE_INSTRUCTIONS[style];
+  const typeNote = MESSAGE_INSTRUCTIONS[messageType];
 
   const completion = await client.chat.completions.create({
     model: "kr/claude-haiku-4.5",
     messages: [
       {
         role: "user",
-        content: `Write a concise, professional cover letter (3 paragraphs) for this job application. Return valid JSON only with this shape: {"coverLetter": string}.
+        content: `Write ${typeNote} in this style: ${styleNote}. Return valid JSON only with this shape: {"coverLetter": string}.
 
-        Candidate profile:
-        ${profile}
+Candidate profile:
+${profile}
 
-        Job:
-        Title: ${job.title}
-        Company: ${job.company ?? "Unknown"}
-        Description: ${job.description ?? "No description"}`,
+Job:
+Title: ${job.title}
+Company: ${job.company ?? "Unknown"}
+Description: ${job.description ?? "No description"}`,
       },
     ],
   });
