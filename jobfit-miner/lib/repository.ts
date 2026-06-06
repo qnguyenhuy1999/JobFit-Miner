@@ -56,6 +56,27 @@ export async function getRankedJobs() {
   });
 }
 
+export async function getCandidateProfile() {
+  return prisma.candidateProfile.findUnique({
+    where: { id: 1 },
+  });
+}
+
+export async function saveCandidateProfile(summary: string, sourceName?: string) {
+  return prisma.candidateProfile.upsert({
+    where: { id: 1 },
+    create: {
+      id: 1,
+      summary,
+      sourceName,
+    },
+    update: {
+      summary,
+      sourceName,
+    },
+  });
+}
+
 export async function updateScore(
   id: number,
   score: number,

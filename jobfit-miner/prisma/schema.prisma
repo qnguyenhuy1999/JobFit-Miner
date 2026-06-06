@@ -19,3 +19,11 @@ model Job {
   reason      String?
   createdAt   DateTime @default(now())
 }
+
+model CandidateProfile {
+  id         Int      @id @default(1)
+  summary    String
+  sourceName String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

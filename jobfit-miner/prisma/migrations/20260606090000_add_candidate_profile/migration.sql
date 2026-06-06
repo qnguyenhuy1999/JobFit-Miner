@@ -1,0 +1,8 @@
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "CandidateProfile" (
+    "id" INTEGER NOT NULL PRIMARY KEY DEFAULT 1,
+    "summary" TEXT NOT NULL,
+    "sourceName" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

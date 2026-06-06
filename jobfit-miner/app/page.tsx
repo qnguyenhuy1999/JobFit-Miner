@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getProfileSetupState } from "@/lib/profile-setup";
 
 type Job = {
   id: number;
@@ -13,6 +14,14 @@ type Job = {
   score: number | null;
   reason: string | null;
   createdAt?: string;
+};
+
+type CandidateProfile = {
+  id: number;
+  summary: string;
+  sourceName: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type Step = 1 | 2 | 3 | 4;
@@ -28,7 +37,10 @@ function Stepper({ current }: { current: Step }) {
           const isDone = num < current;
           const isActive = num === current;
           return (
-            <div key={label} className="flex items-center flex-1 last:flex-none">
+            <div
+              key={label}
+              className="flex items-center flex-1 last:flex-none"
+            >
               <div className="flex flex-col items-center">
                 <div
                   className={[
@@ -40,7 +52,9 @@ function Stepper({ current }: { current: Step }) {
                   ].join(" ")}
                   style={
                     isDone || isActive
-                      ? { background: "linear-gradient(135deg,#f97316,#ec4899)" }
+                      ? {
+                          background: "linear-gradient(135deg,#f97316,#ec4899)",
+                        }
                       : undefined
                   }
                 >
@@ -121,7 +135,9 @@ function JobCard({
         isTop ? "border-orange-200" : "border-stone-200",
         (job.score ?? 100) < 40 ? "opacity-60" : "",
       ].join(" ")}
-      style={isTop ? { boxShadow: "0 2px 12px rgba(249,115,22,.08)" } : undefined}
+      style={
+        isTop ? { boxShadow: "0 2px 12px rgba(249,115,22,.08)" } : undefined
+      }
     >
       <div className="flex items-start justify-between gap-2">
         <div>
@@ -210,10 +226,15 @@ export default function Home() {
   const [keyword, setKeyword] = useState("React Node.js Fullstack");
   const [location, setLocation] = useState("ho-chi-minh-hcm");
   const [profile, setProfile] = useState("");
+  const [savedProfile, setSavedProfile] = useState<CandidateProfile | null>(
+    null,
+  );
+  const [profileFile, setProfileFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [coverLetters, setCoverLetters] = useState<Record<number, string>>({});
   const [loadingMine, setLoadingMine] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
   const [loadingScore, setLoadingScore] = useState(false);
   const [loadingSavedJobs, setLoadingSavedJobs] = useState(false);
   const [loadingCover, setLoadingCover] = useState<Record<number, boolean>>({});
@@ -234,7 +255,21 @@ export default function Home() {
       }
     }
 
+    async function loadCandidateProfile() {
+      try {
+        const res = await fetch("/api/profile");
+        const data = await res.json();
+        if (res.ok && data.profile) {
+          setSavedProfile(data.profile);
+          setProfile(data.profile.summary);
+        }
+      } catch {
+        // The profile setup stays usable even when this optional load fails.
+      }
+    }
+
     void loadSavedJobs();
+    void loadCandidateProfile();
   }, []);
 
   async function refreshSavedJobs() {
@@ -249,6 +284,35 @@ export default function Home() {
     }
   }
 
+  async function uploadCvProfile() {
+    if (!profileFile) {
+      setError("Choose a CV file first.");
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+    setLoadingProfile(true);
+    try {
+      const form = new FormData();
+      form.append("cv", profileFile);
+      const res = await fetch("/api/profile/cv", {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not summarize CV");
+      setSavedProfile(data.profile);
+      setProfile(data.profile.summary);
+      setProfileFile(null);
+      setNotice("Saved a new AI profile summary from your CV.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not summarize CV");
+    } finally {
+      setLoadingProfile(false);
+    }
+  }
+
   async function mine() {
     setError(null);
     setNotice(null);
@@ -258,7 +322,11 @@ export default function Home() {
       const res = await fetch("/api/mine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteUrl, keyword, location: location || undefined }),
+        body: JSON.stringify({
+          siteUrl,
+          keyword,
+          location: location || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Mine failed");
@@ -347,12 +415,20 @@ export default function Home() {
     setError(null);
   }
 
-  const sortedJobs = [...jobs].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  const sortedJobs = [...jobs].sort(
+    (a, b) => (b.score ?? -1) - (a.score ?? -1),
+  );
   const topJobs = sortedJobs.filter((j) => (j.score ?? -1) >= 70);
   const otherJobs = sortedJobs.filter((j) => (j.score ?? -1) < 70);
+  const profileSetupState = getProfileSetupState({
+    hasSavedProfile: Boolean(savedProfile),
+    loadingProfile,
+    hasSelectedFile: Boolean(profileFile),
+    sourceName: savedProfile?.sourceName,
+  });
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-8 space-y-5">
+    <main className="min-w-2xl max-w-4xl mx-auto px-4 py-8 space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div
@@ -431,13 +507,70 @@ export default function Home() {
       {currentStep === 1 && (
         <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm space-y-4">
           <div>
-            <h2 className="text-base font-bold text-stone-900">Configure your search</h2>
+            <h2 className="text-base font-bold text-stone-900">
+              Configure your search
+            </h2>
             <p className="text-sm text-stone-500 mt-0.5">
-              Set where to look and what you&apos;re looking for.
+              Save your CV profile once, then mine jobs without retyping it.
             </p>
           </div>
 
           <div className="space-y-3">
+            <div className="rounded-lg border border-stone-200 bg-stone-50 p-3 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+                    CV Profile
+                  </label>
+                  <p className="text-xs text-stone-500 mt-1">
+                    {profileSetupState.statusText}
+                  </p>
+                </div>
+                {savedProfile && (
+                  <span className="shrink-0 rounded-full bg-white border border-orange-200 px-2 py-1 text-[10px] font-bold text-orange-600">
+                    Saved
+                  </span>
+                )}
+              </div>
+
+              {profile && (
+                <div className="bg-white border border-stone-200 rounded-lg p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-stone-400">
+                    AI summary
+                  </p>
+                  <p className="mt-1 text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">
+                    {profile}
+                  </p>
+                </div>
+              )}
+
+              {profileSetupState.showUploader ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt,.md,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={(e) => setProfileFile(e.target.files?.[0] ?? null)}
+                    className="block w-full text-xs text-stone-600 file:mr-3 file:rounded-md file:border file:border-stone-200 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-stone-700 hover:file:bg-stone-100"
+                  />
+                  <button
+                    onClick={uploadCvProfile}
+                    disabled={profileSetupState.disableAction}
+                    className="shrink-0 text-xs font-bold text-white rounded-lg px-3 py-2 disabled:opacity-50"
+                    style={{
+                      background: "linear-gradient(90deg,#f97316,#ec4899)",
+                      boxShadow: "0 2px 8px rgba(249,115,22,.18)",
+                    }}
+                  >
+                    {profileSetupState.actionLabel}
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-orange-200 bg-white px-3 py-2 text-xs text-orange-700">
+                  Your CV profile is already saved. Future mining runs reuse it automatically.
+                </div>
+              )}
+            </div>
+
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wide text-stone-500 mb-1.5">
                 Job Site URL
@@ -449,7 +582,9 @@ export default function Home() {
                 onChange={(e) => setSiteUrl(e.target.value)}
                 placeholder="https://itviec.com"
               />
-              <p className="text-[11px] text-stone-400 mt-1">Currently supports ITviec.</p>
+              <p className="text-[11px] text-stone-400 mt-1">
+                Currently supports ITviec.
+              </p>
             </div>
 
             <div>
@@ -480,22 +615,6 @@ export default function Home() {
                 <option value="">Anywhere</option>
               </select>
             </div>
-
-            <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wide text-stone-500 mb-1.5">
-                Your Profile & Skills
-              </label>
-              <textarea
-                className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                rows={4}
-                value={profile}
-                onChange={(e) => setProfile(e.target.value)}
-                placeholder="e.g. 3 years React, 2 years Node.js, TypeScript, PostgreSQL..."
-              />
-              <p className="text-[11px] text-stone-400 mt-1">
-                Used for AI scoring and cover letter generation.
-              </p>
-            </div>
           </div>
 
           {error && (
@@ -507,7 +626,7 @@ export default function Home() {
           <div className="flex items-center gap-3 pt-1">
             <button
               onClick={mine}
-              disabled={loadingMine}
+              disabled={loadingMine || !profile.trim()}
               className="text-white text-sm font-bold px-5 py-2.5 rounded-lg disabled:opacity-50"
               style={{
                 background: "linear-gradient(90deg,#f97316,#ec4899)",
@@ -516,7 +635,9 @@ export default function Home() {
             >
               Mine Jobs →
             </button>
-            <span className="text-[11px] text-stone-400">Step 1 of 4</span>
+            <span className="text-[11px] text-stone-400">
+              {profile.trim() ? "Step 1 of 4" : "Upload a CV to start"}
+            </span>
           </div>
         </div>
       )}
@@ -525,7 +646,9 @@ export default function Home() {
       {currentStep === 2 && (
         <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm space-y-4">
           <div>
-            <h2 className="text-base font-bold text-stone-900">Mining ITviec…</h2>
+            <h2 className="text-base font-bold text-stone-900">
+              Mining ITviec…
+            </h2>
             <p className="text-sm text-stone-500 mt-0.5">
               Searching for{" "}
               <strong className="text-stone-700">{keyword}</strong> jobs. This
@@ -650,7 +773,9 @@ export default function Home() {
         <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm space-y-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-bold text-stone-900">Your Results</h2>
+              <h2 className="text-base font-bold text-stone-900">
+                Your Results
+              </h2>
               <p className="text-sm text-stone-500 mt-0.5">
                 <span className="text-orange-500 font-bold">
                   {topJobs.length} strong match
@@ -668,7 +793,9 @@ export default function Home() {
           </div>
 
           {sortedJobs.length === 0 && (
-            <p className="text-sm text-stone-400 italic">No scored jobs to display.</p>
+            <p className="text-sm text-stone-400 italic">
+              No scored jobs to display.
+            </p>
           )}
 
           {topJobs.length > 0 && (
