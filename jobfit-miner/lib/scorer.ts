@@ -1,5 +1,4 @@
 import OpenAI from "openai";
-import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 
 const ScoreSchema = z.object({
@@ -131,6 +130,58 @@ function getClient() {
 export type ScoreResult = z.infer<typeof ScoreSchema>;
 export type CoverLetterResult = z.infer<typeof CoverLetterSchema>;
 
+type CompletionMessage = {
+  parsed?: unknown;
+  content?: string | Array<{ type?: string; text?: string | { value?: string } }>;
+};
+
+type CompletionLike = {
+  choices?: Array<{
+    message?: CompletionMessage;
+  }>;
+};
+
+function extractTextContent(content: CompletionMessage["content"]) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+
+  const text = content
+    .map((part) => {
+      if (typeof part?.text === "string") return part.text;
+      if (typeof part?.text?.value === "string") return part.text.value;
+      return "";
+    })
+    .join("")
+    .trim();
+
+  return text || null;
+}
+
+function parseStructuredOutput<T>(completion: CompletionLike, schema?: z.ZodType<T>): T {
+  const message = completion.choices?.[0]?.message;
+  if (message?.parsed != null) {
+    return schema ? schema.parse(message.parsed) : (message.parsed as T);
+  }
+
+  const rawContent = extractTextContent(message?.content);
+  if (!rawContent) {
+    throw new Error("No structured result returned by model");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch {
+    throw new Error("No structured result returned by model");
+  }
+
+  return schema ? schema.parse(parsed) : (parsed as T);
+}
+
+export const __testables = {
+  parseStructuredOutput,
+};
+
 export async function scoreJob(
   profile: string,
   job: {
@@ -143,12 +194,12 @@ export async function scoreJob(
   const client = getClient();
   if (!client) return scoreLocally(profile, job);
 
-  const completion = await client.chat.completions.parse({
+  const completion = await client.chat.completions.create({
     model: "glm-4.7-flash",
     messages: [
       {
         role: "user",
-        content: `Rate how well this job matches the candidate profile. Score 0-100.
+        content: `Rate how well this job matches the candidate profile. Return valid JSON only with this shape: {"score": number, "reason": string}. Score must be an integer from 0 to 100.
 
         Candidate profile:
         ${profile}
@@ -160,12 +211,9 @@ export async function scoreJob(
         Description: ${job.description ?? "No description"}`,
       },
     ],
-    response_format: zodResponseFormat(ScoreSchema, "score_result"),
   });
 
-  const result = completion.choices[0].message.parsed;
-  if (!result) throw new Error("No parsed result from OpenAI");
-  return result;
+  return parseStructuredOutput(completion, ScoreSchema);
 }
 
 export async function generateCoverLetter(
@@ -175,12 +223,12 @@ export async function generateCoverLetter(
   const client = getClient();
   if (!client) return generateCoverLetterLocally(profile, job);
 
-  const completion = await client.chat.completions.parse({
+  const completion = await client.chat.completions.create({
     model: "glm-4.7-flash",
     messages: [
       {
         role: "user",
-        content: `Write a concise, professional cover letter (3 paragraphs) for this job application.
+        content: `Write a concise, professional cover letter (3 paragraphs) for this job application. Return valid JSON only with this shape: {"coverLetter": string}.
 
         Candidate profile:
         ${profile}
@@ -191,13 +239,8 @@ export async function generateCoverLetter(
         Description: ${job.description ?? "No description"}`,
       },
     ],
-    response_format: zodResponseFormat(
-      CoverLetterSchema,
-      "cover_letter_result",
-    ),
   });
 
-  const result = completion.choices[0].message.parsed;
-  if (!result) throw new Error("No parsed result from OpenAI");
+  const result = parseStructuredOutput(completion, CoverLetterSchema);
   return result.coverLetter;
 }
