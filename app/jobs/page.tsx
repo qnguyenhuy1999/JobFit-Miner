@@ -187,7 +187,7 @@ export default function JobsPage() {
       <section className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
           <div>
-            <h1 className="text-base font-bold text-stone-900">Saved jobs</h1>
+            <h1 className="text-base font-bold text-stone-900">AI matched jobs</h1>
             <p className="text-sm text-stone-500">
               {loading ? "Loading jobs..." : `${pagination.total} matching jobs`}
             </p>

@@ -6,8 +6,8 @@ const createBodySchema = z.object({
   siteUrl: z.string().url(),
   keyword: z.string().min(1),
   location: z.string().optional(),
-  techStack: z.record(z.unknown()).optional(),
-  expectations: z.record(z.unknown()).optional(),
+  techStack: z.record(z.string(), z.unknown()).optional(),
+  expectations: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function GET() {

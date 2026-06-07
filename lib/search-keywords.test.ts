@@ -4,9 +4,9 @@ import { buildSearchKeywords } from "./search-keywords.ts";
 
 const empty = { primary: [], secondary: [], learning: [], avoid: [] };
 
-test("returns Developer when no primary", () => {
+test("returns software engineer when no primary", () => {
   const result = buildSearchKeywords({ techStack: empty });
-  assert.ok(result.some((k) => k.includes("Developer")));
+  assert.ok(result.some((k) => /software engineer/i.test(k)));
 });
 
 test("returns Frontend Engineer for React only", () => {
@@ -21,6 +21,19 @@ test("returns Fullstack for React + Node.js", () => {
     techStack: { ...empty, primary: ["React", "Node.js"] },
   });
   assert.ok(result.some((k) => k.toLowerCase().includes("fullstack")));
+});
+
+test("includes role intent and specific tech stack for fullstack", () => {
+  const result = buildSearchKeywords({
+    techStack: {
+      ...empty,
+      primary: ["React", "Next.js", "Node.js", "NestJS"],
+      seniority: "middle",
+    },
+  });
+  assert.ok(
+    result.some((k) => /middle fullstack javascript react next\.js node\.js nestjs/i.test(k)),
+  );
 });
 
 test("baseKeyword appears first", () => {

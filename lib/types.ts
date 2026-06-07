@@ -7,6 +7,14 @@ export type JobItem = {
   description?: string;
 };
 
+export type JobMatchDebug = {
+  passed: boolean;
+  reasons: string[];
+  matchedPrimaryCount: number;
+  avoidFound: string[];
+  workModeSatisfied: boolean;
+};
+
 export type CandidateTechStack = {
   primary: string[];
   secondary: string[];

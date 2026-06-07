@@ -15,6 +15,7 @@ model Job {
   location           String?
   url                String   @unique
   description        String?
+  isMatched          Boolean  @default(false)
   salary             String?
   workMode           String?
   benefits           String?

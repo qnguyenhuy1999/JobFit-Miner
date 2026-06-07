@@ -26,6 +26,7 @@ test("normalizeJobListParams trims values and clamps pagination inputs", () => {
     minScore: 70,
     status: "",
     hideRejected: false,
+    includeRaw: false,
   });
 });
 
@@ -40,8 +41,10 @@ test("buildJobListWhere creates a search filter across title company and locatio
       minScore: 70,
       status: "",
       hideRejected: false,
+      includeRaw: false,
     }),
     {
+      isMatched: true,
       site: "linkedin",
       location: {
         contains: "remote",

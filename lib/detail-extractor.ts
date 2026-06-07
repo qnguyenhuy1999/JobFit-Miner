@@ -6,12 +6,13 @@ const DEFAULT_MAX = 20;
 export async function extractJobDetails(
   jobs: RawJob[],
   crawler: JobCrawler,
+  maxJobs = DEFAULT_MAX,
 ): Promise<{ detailed: DetailedJob[]; errors: string[] }> {
   if (!crawler.extractDetail) {
-    return { detailed: jobs.map((j) => ({ ...j })), errors: [] };
+    return { detailed: jobs.slice(0, maxJobs).map((j) => ({ ...j })), errors: [] };
   }
 
-  const limit = Math.min(jobs.length, DEFAULT_MAX);
+  const limit = Math.min(jobs.length, maxJobs);
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   const detailed: DetailedJob[] = [];

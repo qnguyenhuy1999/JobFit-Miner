@@ -76,3 +76,74 @@ test("buildScorePrompt asks the core AI scorer to evaluate JD expectations", () 
   assert.match(prompt, /Return valid JSON only/);
   assert.match(prompt, /expectation fit/i);
 });
+
+test("passesHardMatchGate rejects jobs below hard criteria", () => {
+  const gate = __testables.passesHardMatchGate({
+    analysis: {
+      score: 82,
+      matchedSkills: ["React"],
+      detectedTechStack: ["React"],
+      expectationMatches: {
+        workMode: "unknown",
+        salary: "unknown",
+        benefits: "unknown",
+        socialInsurance: "unknown",
+        location: "unknown",
+      },
+      redFlags: [],
+    },
+    techStack: {
+      primary: ["React", "Next.js", "Node.js"],
+      secondary: [],
+      learning: [],
+      avoid: ["PHP"],
+      seniority: "middle",
+    },
+    expectations: {
+      preferredWorkModes: ["remote"],
+      requiredBenefits: [],
+      niceToHaveBenefits: [],
+      locations: [],
+    },
+    minScore: 70,
+  });
+
+  assert.equal(gate.passed, false);
+  assert.match(gate.reasons.join(" "), /fewer than 2 matched primary skills/i);
+  assert.match(gate.reasons.join(" "), /work mode does not satisfy expectation/i);
+});
+
+test("passesHardMatchGate accepts strong aligned jobs", () => {
+  const gate = __testables.passesHardMatchGate({
+    analysis: {
+      score: 90,
+      matchedSkills: ["React", "Next.js", "Node.js"],
+      detectedTechStack: ["React", "Next.js", "Node.js"],
+      expectationMatches: {
+        workMode: true,
+        salary: "unknown",
+        benefits: "unknown",
+        socialInsurance: "unknown",
+        location: "unknown",
+      },
+      redFlags: [],
+    },
+    techStack: {
+      primary: ["React", "Next.js", "Node.js"],
+      secondary: [],
+      learning: [],
+      avoid: ["PHP"],
+      seniority: "middle",
+    },
+    expectations: {
+      preferredWorkModes: ["remote"],
+      requiredBenefits: [],
+      niceToHaveBenefits: [],
+      locations: [],
+    },
+    minScore: 70,
+  });
+
+  assert.equal(gate.passed, true);
+  assert.equal(gate.matchedPrimaryCount, 3);
+});

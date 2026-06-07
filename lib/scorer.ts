@@ -4,7 +4,12 @@ import {
   type CompletionLike,
   parseStructuredCompletion,
 } from "./ai-completion.ts";
-import type { CandidateTechStack, CandidateExpectations, DetailedJob } from "./types.ts";
+import type {
+  CandidateTechStack,
+  CandidateExpectations,
+  DetailedJob,
+  JobMatchDebug,
+} from "./types.ts";
 
 const TriState = z.union([z.boolean(), z.literal("unknown")]);
 
@@ -183,7 +188,16 @@ function localAnalyzeTechStackFit(input: {
   expectations: CandidateExpectations;
   job: DetailedJob;
 }): JobAnalysis {
-  const text = (input.job.fullDescription ?? input.job.description ?? "").toLowerCase();
+  const text = [
+    input.job.title,
+    input.job.description,
+    input.job.fullDescription,
+    input.job.workMode,
+    input.job.location,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
   const primary = input.techStack.primary.map((s) => s.toLowerCase());
   const secondary = input.techStack.secondary.map((s) => s.toLowerCase());
   const avoid = input.techStack.avoid.map((s) => s.toLowerCase());
@@ -244,6 +258,52 @@ function localAnalyzeTechStackFit(input: {
   };
 }
 
+export function passesHardMatchGate(input: {
+  analysis: Pick<
+    JobAnalysis,
+    "score" | "matchedSkills" | "expectationMatches" | "redFlags" | "detectedTechStack"
+  >;
+  techStack: CandidateTechStack;
+  expectations: CandidateExpectations;
+  minScore?: number;
+}): JobMatchDebug {
+  const minScore = input.minScore ?? 70;
+  const detectedTechStack = input.analysis.detectedTechStack ?? [];
+  const primaryMatched = input.analysis.matchedSkills.filter((skill) =>
+    input.techStack.primary.some((primary) => primary.toLowerCase() === skill.toLowerCase()),
+  );
+  const avoidFound = input.techStack.avoid.filter((avoid) =>
+    detectedTechStack.some((skill) => skill.toLowerCase().includes(avoid.toLowerCase())) ||
+    input.analysis.matchedSkills.some((skill) => skill.toLowerCase().includes(avoid.toLowerCase())) ||
+    input.analysis.redFlags.some((flag) => flag.toLowerCase().includes(avoid.toLowerCase())),
+  );
+  const workModeSatisfied = input.expectations.preferredWorkModes.length === 0
+    ? true
+    : input.analysis.expectationMatches.workMode === true;
+
+  const reasons: string[] = [];
+  if (input.analysis.score < minScore) {
+    reasons.push(`score below ${minScore}`);
+  }
+  if (primaryMatched.length < 2) {
+    reasons.push("fewer than 2 matched primary skills");
+  }
+  if (avoidFound.length > 0) {
+    reasons.push(`avoid tech found: ${avoidFound.join(", ")}`);
+  }
+  if (!workModeSatisfied) {
+    reasons.push("work mode does not satisfy expectation");
+  }
+
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    matchedPrimaryCount: primaryMatched.length,
+    avoidFound,
+    workModeSatisfied,
+  };
+}
+
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
   const baseURL = process.env.OPENAI_BASE_URL?.trim() || undefined;
@@ -264,6 +324,7 @@ function parseStructuredOutput<T>(
 export const __testables = {
   parseStructuredOutput,
   buildScorePrompt,
+  passesHardMatchGate,
 };
 
 async function callWithRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {

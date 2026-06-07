@@ -7,6 +7,7 @@ export type JobListParams = {
   minScore: number | null;
   status: string;
   hideRejected: boolean;
+  includeRaw: boolean;
 };
 
 export function normalizeJobListParams(
@@ -34,11 +35,16 @@ export function normalizeJobListParams(
     minScore: Number.isFinite(minScore) ? minScore : null,
     status: read("status").trim(),
     hideRejected: read("hideRejected") === "1",
+    includeRaw: read("includeRaw") === "1",
   };
 }
 
 export function buildJobListWhere(params: JobListParams) {
   const where: Record<string, unknown> = {};
+
+  if (!params.includeRaw) {
+    where.isMatched = true;
+  }
 
   if (params.site) {
     where.site = params.site;

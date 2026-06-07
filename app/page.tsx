@@ -17,6 +17,8 @@ type MiningRun = {
   createdAt: string;
 };
 
+const ANALYSIS_MIN_SCORE = 70;
+
 type Job = {
   id: number;
   site: string;
@@ -284,6 +286,7 @@ function JobCard({
   compareSelected,
   onToggleCompare,
   onViewDetails,
+  onStatusChange,
 }: {
   job: Job;
   coverLetter?: string;
@@ -642,6 +645,7 @@ export default function Home() {
           techStack: parsedTechStack,
           expectations: parsedExpectations,
           limit,
+          minScore: ANALYSIS_MIN_SCORE,
         }),
       });
       const data = await res.json();
@@ -651,13 +655,13 @@ export default function Home() {
       await refreshSavedJobs();
       if (data.jobs.length > 0) {
         setNotice(
-          `Showing ${data.jobs.length} AI analyzed job${data.jobs.length === 1 ? "" : "s"} ranked by fit.`,
+          `Showing ${data.jobs.length} AI matched job${data.jobs.length === 1 ? "" : "s"} ranked by fit.`,
         );
       } else if (data.existingCount > 0) {
         setNotice(
-          `No new jobs were analyzed. ${data.existingCount} already saved job${
+          `No new jobs were analyzed. ${data.existingCount} already matched job${
             data.existingCount === 1 ? "" : "s"
-          } matched this search and remain available in Saved jobs.`,
+          } remain available in AI matched jobs.`,
         );
       }
       setCurrentStep(data.jobs.length > 0 ? 3 : 1);
@@ -961,7 +965,7 @@ export default function Home() {
             <p className="text-xs text-stone-500 mt-0.5">
               {loadingSavedJobs
                 ? "Loading..."
-                : `${savedJobs.length} saved job${savedJobs.length === 1 ? "" : "s"} · ${miningRuns.length} run${miningRuns.length === 1 ? "" : "s"}`}
+                : `${savedJobs.length} AI matched job${savedJobs.length === 1 ? "" : "s"} · ${miningRuns.length} run${miningRuns.length === 1 ? "" : "s"}`}
             </p>
           </div>
           <button
@@ -1414,7 +1418,7 @@ export default function Home() {
                 boxShadow: "0 2px 8px rgba(249,115,22,.25)",
               }}
             >
-              Analyze Jobs →
+              AI Analyze Jobs →
             </button>
             <span className="text-[11px] text-stone-400">
               {profile.trim() ? "Step 1 of 3" : "Upload a CV to start"}
@@ -1431,7 +1435,7 @@ export default function Home() {
               Analyzing jobs from {selectedSite.label}…
             </h2>
             <p className="text-sm text-stone-500 mt-0.5">
-              Mining, extracting details, and scoring{" "}
+              Crawling broadly, filtering with AI, and scoring{" "}
               <strong className="text-stone-700">{keyword}</strong> jobs. This
               can take 15–30 seconds.
             </p>
@@ -1453,7 +1457,7 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0 animate-pulse" />
-              Generating keywords, extracting details, and ranking fit…
+              Generating role-intent keywords, filtering hard matches, and ranking fit…
             </div>
           </div>
         </div>
@@ -1464,7 +1468,7 @@ export default function Home() {
         <div className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm space-y-4">
           <div>
             <h2 className="text-base font-bold text-stone-900">
-              AI analyzed jobs
+              AI matched jobs
             </h2>
             <p className="text-sm text-stone-500 mt-0.5">
               These results are already ranked by fit against your profile, tech
@@ -1473,12 +1477,12 @@ export default function Home() {
           </div>
 
           <div className="inline-flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-sm text-orange-700 font-semibold">
-            AI analyzed {jobs.length} job{jobs.length !== 1 ? "s" : ""}
+            AI matched {jobs.length} job{jobs.length !== 1 ? "s" : ""}
           </div>
 
           {duplicateCount > 0 && (
             <div className="inline-flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-600 font-semibold">
-              {duplicateCount} already saved job
+              {duplicateCount} already matched job
               {duplicateCount !== 1 ? "s" : ""} skipped
             </div>
           )}
@@ -1511,7 +1515,7 @@ export default function Home() {
 
           {jobs.length === 0 && (
             <p className="text-sm text-stone-400 italic">
-              No AI analyzed jobs are available for this run.
+              No AI matched jobs are available for this run.
             </p>
           )}
 
@@ -1548,7 +1552,7 @@ export default function Home() {
                   {topJobs.length} strong match
                   {topJobs.length !== 1 ? "es" : ""}
                 </span>{" "}
-                out of {jobs.length} AI analyzed jobs
+                out of {jobs.length} AI matched jobs
               </p>
             </div>
             <button
@@ -1653,7 +1657,7 @@ export default function Home() {
 
           {sortedFilteredJobs.length === 0 && (
             <p className="text-sm text-stone-400 italic">
-              No AI analyzed jobs to display.
+              No AI matched jobs to display.
             </p>
           )}
 

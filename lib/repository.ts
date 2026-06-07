@@ -7,7 +7,11 @@ import {
 } from "./job-listing.ts";
 import type { JobItem } from "./types";
 
-export async function saveNewJobs(jobs: JobItem[]) {
+type SaveJobsOptions = {
+  isMatched: boolean;
+};
+
+async function saveNewJobsWithMode(jobs: JobItem[], options: SaveJobsOptions) {
   const incomingUrls = [...new Set(jobs.map((job) => job.url))];
   const storedJobs = await prisma.job.findMany({
     where: { url: { in: incomingUrls } },
@@ -29,12 +33,70 @@ export async function saveNewJobs(jobs: JobItem[]) {
           location: job.location,
           url: job.url,
           description: job.description,
+          isMatched: options.isMatched,
         },
       }),
     ),
   );
 
   return { jobs: savedJobs, existingJobs };
+}
+
+export async function saveNewJobs(jobs: JobItem[]) {
+  return saveNewJobsWithMode(jobs, { isMatched: false });
+}
+
+export async function saveMatchedJobs(jobs: JobItem[]) {
+  const incomingUrls = [...new Set(jobs.map((job) => job.url))];
+  const existing = await prisma.job.findMany({
+    where: { url: { in: incomingUrls } },
+    select: { id: true, url: true, isMatched: true },
+  });
+  const existingByUrl = new Map(existing.map((job) => [job.url, job]));
+
+  const savedJobs: Awaited<ReturnType<typeof prisma.job.create>>[] = [];
+  const existingMatchedJobs: Array<{ id: number; url: string }> = [];
+
+  for (const job of jobs) {
+    const known = existingByUrl.get(job.url);
+    if (!known) {
+      savedJobs.push(
+        await prisma.job.create({
+          data: {
+            site: job.site,
+            title: job.title,
+            company: job.company,
+            location: job.location,
+            url: job.url,
+            description: job.description,
+            isMatched: true,
+          },
+        }),
+      );
+      continue;
+    }
+
+    if (known.isMatched) {
+      existingMatchedJobs.push({ id: known.id, url: known.url });
+      continue;
+    }
+
+    savedJobs.push(
+      await prisma.job.update({
+        where: { id: known.id },
+        data: {
+          site: job.site,
+          title: job.title,
+          company: job.company,
+          location: job.location,
+          description: job.description,
+          isMatched: true,
+        },
+      }),
+    );
+  }
+
+  return { jobs: savedJobs, existingMatchedJobs };
 }
 
 export async function upsertJobs(jobs: JobItem[]) {
@@ -51,6 +113,7 @@ export async function getJobsByIds(ids: number[]) {
 
 export async function getSavedJobs() {
   return prisma.job.findMany({
+    where: { isMatched: true },
     orderBy: [{ createdAt: "desc" }],
   });
 }
@@ -81,6 +144,7 @@ export async function listJobs(params: JobListParams) {
 
 export async function getRankedJobs() {
   return prisma.job.findMany({
+    where: { isMatched: true },
     orderBy: [{ score: "desc" }, { createdAt: "desc" }],
   });
 }
