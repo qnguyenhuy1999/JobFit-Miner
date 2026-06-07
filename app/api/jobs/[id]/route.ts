@@ -1,10 +1,15 @@
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
-
-const VALID_STATUSES = ["new", "saved", "interested", "applied", "rejected", "ignored"] as const;
+import { updateJobStatus, type JobStatus } from "@/lib/repository";
 
 const bodySchema = z.object({
-  status: z.enum(VALID_STATUSES),
+  status: z.enum([
+    "new",
+    "shortlisted",
+    "applied",
+    "rejected",
+    "interviewing",
+    "offer",
+  ] as const),
 });
 
 export async function PATCH(
@@ -23,10 +28,6 @@ export async function PATCH(
     return Response.json({ error: parsed.error.message }, { status: 400 });
   }
 
-  const job = await prisma.job.update({
-    where: { id: jobId },
-    data: { status: parsed.data.status },
-  });
-
+  const job = await updateJobStatus(jobId, parsed.data.status as JobStatus);
   return Response.json({ job });
 }

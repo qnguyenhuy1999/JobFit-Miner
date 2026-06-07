@@ -164,6 +164,55 @@ export async function recordMiningRun(run: {
   return prisma.miningRun.create({ data: run });
 }
 
+export type JobStatus =
+  | "new"
+  | "shortlisted"
+  | "applied"
+  | "rejected"
+  | "interviewing"
+  | "offer";
+
+export async function updateJobStatus(id: number, status: JobStatus) {
+  return prisma.job.update({
+    where: { id },
+    data: { status },
+  });
+}
+
+export interface PresetInput {
+  name: string;
+  siteUrl: string;
+  keyword: string;
+  location?: string;
+  techStack?: Record<string, unknown>;
+  expectations?: Record<string, unknown>;
+}
+
+export async function getPresets() {
+  return prisma.searchPreset.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function createPreset(input: PresetInput) {
+  return prisma.searchPreset.create({
+    data: {
+      name: input.name,
+      siteUrl: input.siteUrl,
+      keyword: input.keyword,
+      location: input.location,
+      techStack: input.techStack ? JSON.stringify(input.techStack) : null,
+      expectations: input.expectations
+        ? JSON.stringify(input.expectations)
+        : null,
+    },
+  });
+}
+
+export async function deletePreset(id: number) {
+  return prisma.searchPreset.delete({ where: { id } });
+}
+
 export const __testables = {
   splitJobsByKnownUrls,
 };

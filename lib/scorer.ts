@@ -151,7 +151,16 @@ function scoreLocally(
 
 function generateCoverLetterLocally(
   profile: string,
-  job: { title: string; company?: string | null; description?: string | null },
+  job: {
+    title: string;
+    company?: string | null;
+    description?: string | null;
+    salary?: string | null;
+    workMode?: string | null;
+    matchedSkills?: string[];
+    missingSkills?: string[];
+    reason?: string | null;
+  },
 ) {
   const company = job.company ?? "your company";
   const profileSummary = profile.trim().replace(/\s+/g, " ").slice(0, 280);
@@ -438,7 +447,16 @@ const MESSAGE_INSTRUCTIONS: Record<MessageType, string> = {
 
 export async function generateCoverLetter(
   profile: string,
-  job: { title: string; company?: string | null; description?: string | null },
+  job: {
+    title: string;
+    company?: string | null;
+    description?: string | null;
+    salary?: string | null;
+    workMode?: string | null;
+    matchedSkills?: string[];
+    missingSkills?: string[];
+    reason?: string | null;
+  },
   style: CoverLetterStyle = "professional",
   messageType: MessageType = "cover_letter",
 ): Promise<string> {
@@ -447,6 +465,16 @@ export async function generateCoverLetter(
 
   const styleNote = STYLE_INSTRUCTIONS[style];
   const typeNote = MESSAGE_INSTRUCTIONS[messageType];
+
+  const contextLines: string[] = [];
+  if (job.salary) contextLines.push(`Salary: ${job.salary}`);
+  if (job.workMode) contextLines.push(`Work mode: ${job.workMode}`);
+  if (job.matchedSkills?.length) contextLines.push(`Matched skills: ${job.matchedSkills.join(", ")}`);
+  if (job.missingSkills?.length) contextLines.push(`Skills to address: ${job.missingSkills.join(", ")}`);
+  if (job.reason) contextLines.push(`Fit summary: ${job.reason}`);
+  const contextBlock = contextLines.length > 0
+    ? `\nAnalysis context:\n${contextLines.join("\n")}`
+    : "";
 
   const completion = await client.chat.completions.create({
     model: "kr/claude-haiku-4.5",
@@ -461,7 +489,7 @@ ${profile}
 Job:
 Title: ${job.title}
 Company: ${job.company ?? "Unknown"}
-Description: ${job.description ?? "No description"}`,
+Description: ${job.description ?? "No description"}${contextBlock}`,
       },
     ],
   });

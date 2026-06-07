@@ -100,11 +100,13 @@ export async function POST(req: Request) {
 
   // Extract detail pages if crawler supports it
   let detailedItems: RawJob[] = limitedItems;
+  let detailErrors: string[] = [];
   try {
     const crawler = getCrawlerForUrl(siteUrl);
     if (crawler) {
-      const { detailed } = await extractJobDetails(limitedItems, crawler);
+      const { detailed, errors } = await extractJobDetails(limitedItems, crawler);
       detailedItems = detailed;
+      detailErrors = errors;
     }
   } catch {
     // Fall back to listing data
@@ -129,6 +131,7 @@ export async function POST(req: Request) {
         fullDescription?: string | null;
         salary?: string | null;
         workMode?: string | null;
+        benefits?: string[];
       },
     ]),
   );
@@ -158,7 +161,12 @@ export async function POST(req: Request) {
       } else {
         analysis = await scoreJob(profile, job, expectationsText);
       }
-      await updateJobAnalysis(job.id, analysis);
+      await updateJobAnalysis(job.id, {
+        ...analysis,
+        salary: detail?.salary ?? undefined,
+        workMode: detail?.workMode ?? undefined,
+        benefits: detail?.benefits ?? undefined,
+      });
       scored++;
     } catch {
       await updateJobAnalysis(job.id, {
@@ -188,5 +196,6 @@ export async function POST(req: Request) {
     jobs: result,
     count: result.length,
     existingCount: existingJobs.length,
+    detailErrors,
   });
 }

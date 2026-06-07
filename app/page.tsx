@@ -6,6 +6,17 @@ import { SUPPORTED_SITES } from "@/crawlers/sites";
 import { buildSearchKeywords } from "@/lib/search-keywords";
 import type { CandidateTechStack } from "@/lib/types";
 
+type MiningRun = {
+  id: number;
+  keywords: string;
+  site: string;
+  location: string | null;
+  found: number;
+  scored: number;
+  errors: string | null;
+  createdAt: string;
+};
+
 type Job = {
   id: number;
   site: string;
@@ -27,6 +38,25 @@ type Job = {
   status: string;
   createdAt?: string;
 };
+
+type SearchPreset = {
+  id: number;
+  name: string;
+  siteUrl: string | null;
+  keyword: string | null;
+  location: string | null;
+  techStack: string | null;
+  expectations: string | null;
+  createdAt: string;
+};
+
+type JobStatus =
+  | "new"
+  | "shortlisted"
+  | "applied"
+  | "rejected"
+  | "interviewing"
+  | "offer";
 
 type CandidateProfile = {
   id: number;
@@ -136,6 +166,34 @@ function parseJsonArray(value: string | null): string[] {
   }
 }
 
+function statusColor(status: string): string {
+  switch (status) {
+    case "shortlisted":
+      return "bg-blue-50 text-blue-700 border border-blue-200";
+    case "applied":
+      return "bg-orange-50 text-orange-700 border border-orange-200";
+    case "interviewing":
+      return "bg-purple-50 text-purple-700 border border-purple-200";
+    case "offer":
+      return "bg-green-50 text-green-700 border border-green-200";
+    case "rejected":
+      return "bg-stone-100 text-stone-400 border border-stone-200";
+    default:
+      return "bg-stone-50 text-stone-500 border border-stone-200";
+  }
+}
+
+function TriStateIcon({
+  value,
+}: {
+  value: boolean | "unknown" | null | undefined;
+}) {
+  if (value === true)
+    return <span className="text-green-600 font-bold">✓</span>;
+  if (value === false) return <span className="text-red-500 font-bold">✗</span>;
+  return <span className="text-stone-400">?</span>;
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-1">
@@ -235,6 +293,7 @@ function JobCard({
   compareSelected?: boolean;
   onToggleCompare?: () => void;
   onViewDetails?: () => void;
+  onStatusChange?: (status: JobStatus) => void;
 }) {
   return (
     <div
@@ -366,6 +425,32 @@ function JobCard({
         />
       </div>
 
+      {onStatusChange && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-stone-400">Status:</span>
+          <select
+            value={job.status}
+            onChange={(e) => onStatusChange(e.target.value as JobStatus)}
+            className={`text-xs rounded-md px-2 py-0.5 font-medium outline-none cursor-pointer focus:ring-1 focus:ring-orange-400 ${statusColor(job.status)}`}
+          >
+            {(
+              [
+                "new",
+                "shortlisted",
+                "applied",
+                "interviewing",
+                "offer",
+                "rejected",
+              ] as JobStatus[]
+            ).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {coverLetter && (
         <div className="border-t border-orange-100 pt-3 space-y-2">
           <p className="text-[10px] font-bold uppercase tracking-wide text-orange-500">
@@ -399,9 +484,12 @@ export default function Home() {
   const [loadingSavedJobs, setLoadingSavedJobs] = useState(false);
   const [loadingCover, setLoadingCover] = useState<Record<number, boolean>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [miningRuns, setMiningRuns] = useState<MiningRun[]>([]);
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [presets, setPresets] = useState<SearchPreset[]>([]);
+  const [savingPreset, setSavingPreset] = useState(false);
 
   useEffect(() => {
     async function loadSavedJobs() {
@@ -428,8 +516,30 @@ export default function Home() {
       }
     }
 
+    async function loadMiningRuns() {
+      try {
+        const res = await fetch("/api/mining-runs");
+        const data = await res.json();
+        if (res.ok) setMiningRuns(data.runs);
+      } catch {
+        // non-fatal
+      }
+    }
+
+    async function loadPresets() {
+      try {
+        const res = await fetch("/api/presets");
+        const data = await res.json();
+        if (res.ok) setPresets(data.presets);
+      } catch {
+        // non-fatal
+      }
+    }
+
     void loadSavedJobs();
     void loadCandidateProfile();
+    void loadMiningRuns();
+    void loadPresets();
   }, []);
 
   async function refreshSavedJobs() {
@@ -591,7 +701,12 @@ export default function Home() {
     hideRedFlags: false,
     minScore: 0,
     strongOnly: false,
+    salaryKnown: false,
+    companyFilter: "",
+    techFilter: "",
   });
+
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   const [drawerJob, setDrawerJob] = useState<Job | null>(null);
 
@@ -645,6 +760,21 @@ export default function Home() {
       if (filters.minScore > 0 && (job.score ?? 0) < filters.minScore)
         return false;
       if (filters.strongOnly && job.fitLevel !== "strong") return false;
+      if (filters.salaryKnown && !job.salary) return false;
+      if (
+        filters.companyFilter &&
+        !job.company
+          ?.toLowerCase()
+          .includes(filters.companyFilter.toLowerCase())
+      )
+        return false;
+      if (
+        filters.techFilter &&
+        !job.detectedTechStack
+          ?.toLowerCase()
+          .includes(filters.techFilter.toLowerCase())
+      )
+        return false;
       return true;
     });
   }, [jobs, filters]);
@@ -656,7 +786,7 @@ export default function Home() {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
-      } else if (next.size < 3) {
+      } else if (next.size < 4) {
         next.add(id);
       }
       return next;
@@ -683,6 +813,11 @@ export default function Home() {
             title: job.title,
             company: job.company,
             description: job.description,
+            salary: job.salary,
+            workMode: job.workMode,
+            matchedSkills: parseJsonArray(job.matchedSkills),
+            missingSkills: parseJsonArray(job.missingSkills),
+            reason: job.reason,
           },
           style,
           messageType,
@@ -695,6 +830,95 @@ export default function Home() {
       setError(e instanceof Error ? e.message : "Cover letter failed");
     } finally {
       setLoadingCover((prev) => ({ ...prev, [job.id]: false }));
+    }
+  }
+
+  function loadPreset(preset: SearchPreset) {
+    if (preset.siteUrl) setSiteUrl(preset.siteUrl);
+    if (preset.keyword) setKeyword(preset.keyword);
+    if (preset.location) setLocation(preset.location);
+    if (preset.techStack) {
+      try {
+        setTechStack(JSON.parse(preset.techStack));
+      } catch { /* ignore */ }
+    }
+    if (preset.expectations) {
+      try {
+        setExpectations(JSON.parse(preset.expectations));
+      } catch { /* ignore */ }
+    }
+  }
+
+  async function savePreset() {
+    const name = window.prompt("Preset name:");
+    if (!name?.trim()) return;
+    setSavingPreset(true);
+    try {
+      const res = await fetch("/api/presets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          siteUrl,
+          keyword,
+          location,
+          techStack: JSON.stringify(techStack),
+          expectations: JSON.stringify(expectations),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not save preset");
+      setPresets((prev) => [...prev, data.preset]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save preset");
+    } finally {
+      setSavingPreset(false);
+    }
+  }
+
+  async function deletePreset(id: number) {
+    setPresets((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await fetch(`/api/presets/${id}`, { method: "DELETE" });
+    } catch {
+      try {
+        const res = await fetch("/api/presets");
+        const data = await res.json();
+        if (res.ok) setPresets(data.presets);
+      } catch { /* ignore */ }
+    }
+  }
+
+  async function updateJobStatus(jobId: number, status: JobStatus) {
+    const prevJobStatus = jobs.find((j) => j.id === jobId)?.status ?? "new";
+    const prevSavedStatus =
+      savedJobs.find((j) => j.id === jobId)?.status ?? "new";
+    setJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, status } : j)),
+    );
+    setSavedJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, status } : j)),
+    );
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Could not update status");
+      }
+    } catch (e) {
+      setJobs((prev) =>
+        prev.map((j) => (j.id === jobId ? { ...j, status: prevJobStatus } : j)),
+      );
+      setSavedJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId ? { ...j, status: prevSavedStatus } : j,
+        ),
+      );
+      setError(e instanceof Error ? e.message : "Could not update status");
     }
   }
 
@@ -733,37 +957,61 @@ export default function Home() {
       <div className="bg-white border border-stone-200 rounded-xl px-5 py-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-bold text-stone-900">Saved jobs</h2>
+            <h2 className="text-sm font-bold text-stone-900">Mining history</h2>
             <p className="text-xs text-stone-500 mt-0.5">
               {loadingSavedJobs
-                ? "Loading your job archive..."
-                : `${savedJobs.length} job${savedJobs.length === 1 ? "" : "s"} stored in the database`}
+                ? "Loading..."
+                : `${savedJobs.length} saved job${savedJobs.length === 1 ? "" : "s"} · ${miningRuns.length} run${miningRuns.length === 1 ? "" : "s"}`}
             </p>
           </div>
           <button
-            onClick={() => setHistoryOpen((prev) => !prev)}
+            onClick={() => setHistoryOpen((p) => !p)}
             className="text-xs font-bold text-orange-600 border border-orange-200 bg-orange-50 rounded-lg px-3 py-2 hover:bg-orange-100"
           >
-            {historyOpen ? "Hide History" : "View History"}
+            {historyOpen ? "Hide" : "View history"}
           </button>
         </div>
 
         {historyOpen && (
-          <div className="border-t border-stone-100 pt-3 space-y-3">
-            {savedJobs.length === 0 && (
+          <div className="border-t border-stone-100 pt-3 space-y-2">
+            {miningRuns.length === 0 && (
               <p className="text-sm text-stone-400 italic">
-                No saved jobs yet. Mine once and new matches will appear here.
+                No mining runs yet.
               </p>
             )}
-            {savedJobs.map((job) => (
-              <JobCard
-                key={job.id}
-                job={job}
-                coverLetter={coverLetters[job.id]}
-                loading={loadingCover[job.id] ?? false}
-                onGenerate={(s, m) => generateCoverLetter(job, s, m)}
-                isTop={(job.score ?? -1) >= 70}
-              />
+            {miningRuns.map((run) => (
+              <div
+                key={run.id}
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-stone-100 bg-stone-50 text-xs"
+              >
+                <div className="space-y-0.5 min-w-0">
+                  <p className="font-semibold text-stone-800 truncate">
+                    {run.keywords}
+                  </p>
+                  <p className="text-stone-500">
+                    {run.site}
+                    {run.location ? ` · ${run.location}` : ""}
+                  </p>
+                  <p className="text-stone-400">
+                    {run.found} found · {run.scored} scored ·{" "}
+                    {new Date(run.createdAt).toLocaleDateString()}
+                  </p>
+                  {run.errors && (
+                    <p className="text-amber-600">⚠ Has errors</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    setSiteUrl(`https://${run.site}`);
+                    setKeyword(run.keywords.split(",")[0].trim());
+                    setLocation(run.location ?? "");
+                    setCurrentStep(1);
+                  }}
+                  className="shrink-0 text-xs text-orange-600 border border-orange-200 bg-orange-50 rounded px-2 py-1 hover:bg-orange-100"
+                >
+                  Rerun
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -1087,6 +1335,49 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Presets */}
+            <div className="mt-4 border-t border-stone-100 pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-stone-700">
+                  Presets
+                </h3>
+                <button
+                  onClick={savePreset}
+                  disabled={savingPreset}
+                  className="text-xs text-orange-600 border border-orange-200 bg-orange-50 rounded-lg px-2 py-1 hover:bg-orange-100 disabled:opacity-50"
+                >
+                  {savingPreset ? "Saving…" : "Save current"}
+                </button>
+              </div>
+              {presets.length === 0 ? (
+                <p className="text-xs text-stone-400 italic">
+                  No saved presets.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {presets.map((preset) => (
+                    <div
+                      key={preset.id}
+                      className="flex items-center gap-0.5 bg-stone-50 border border-stone-200 rounded-lg px-2 py-1"
+                    >
+                      <button
+                        onClick={() => loadPreset(preset)}
+                        className="text-xs text-stone-700 hover:text-orange-600 mr-1"
+                      >
+                        {preset.name}
+                      </button>
+                      <button
+                        onClick={() => deletePreset(preset.id)}
+                        className="text-[10px] text-stone-400 hover:text-red-500"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Keyword preview */}
             {previewKeywords.length > 0 && (
               <div className="mt-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
@@ -1309,6 +1600,55 @@ export default function Home() {
                 className="w-14 border border-stone-200 rounded px-2 py-1 text-xs"
               />
             </div>
+            <button
+              onClick={() => setShowMoreFilters((p) => !p)}
+              className="px-3 py-1 rounded-full text-xs border bg-white text-stone-600 border-stone-200 hover:border-stone-400"
+            >
+              {showMoreFilters ? "Less filters ▲" : "More filters ▼"}
+            </button>
+            {showMoreFilters && (
+              <div className="flex flex-wrap gap-2 mt-2 w-full">
+                <button
+                  onClick={() =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      salaryKnown: !prev.salaryKnown,
+                    }))
+                  }
+                  className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                    filters.salaryKnown
+                      ? "bg-stone-800 text-white border-stone-800"
+                      : "bg-white text-stone-600 border-stone-200 hover:border-stone-400"
+                  }`}
+                >
+                  Salary known
+                </button>
+                <input
+                  type="text"
+                  placeholder="Company..."
+                  value={filters.companyFilter}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      companyFilter: e.target.value,
+                    }))
+                  }
+                  className="border border-stone-200 rounded-full px-3 py-1 text-xs bg-white text-stone-700 focus:outline-none focus:border-orange-400 w-36"
+                />
+                <input
+                  type="text"
+                  placeholder="Tech (e.g. React)..."
+                  value={filters.techFilter}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      techFilter: e.target.value,
+                    }))
+                  }
+                  className="border border-stone-200 rounded-full px-3 py-1 text-xs bg-white text-stone-700 focus:outline-none focus:border-orange-400 w-44"
+                />
+              </div>
+            )}
           </div>
 
           {sortedFilteredJobs.length === 0 && (
@@ -1333,6 +1673,7 @@ export default function Home() {
                   compareSelected={compareIds.has(job.id)}
                   onToggleCompare={() => toggleCompare(job.id)}
                   onViewDetails={() => setDrawerJob(job)}
+                  onStatusChange={(s) => updateJobStatus(job.id, s)}
                 />
               ))}
             </div>
@@ -1354,6 +1695,7 @@ export default function Home() {
                   compareSelected={compareIds.has(job.id)}
                   onToggleCompare={() => toggleCompare(job.id)}
                   onViewDetails={() => setDrawerJob(job)}
+                  onStatusChange={(s) => updateJobStatus(job.id, s)}
                 />
               ))}
             </div>
@@ -1414,6 +1756,49 @@ export default function Home() {
                             parseJsonArray(job.redFlags).join(", ") || "none"
                           }
                         />
+                        <div className="flex gap-1">
+                          <span className="text-stone-400 shrink-0 w-20">
+                            Insurance
+                          </span>
+                          <TriStateIcon
+                            value={(() => {
+                              try {
+                                return JSON.parse(
+                                  job.expectationMatches ?? "{}",
+                                ).socialInsurance;
+                              } catch {
+                                return undefined;
+                              }
+                            })()}
+                          />
+                        </div>
+                        <div className="flex gap-1">
+                          <span className="text-stone-400 shrink-0 w-20">
+                            Location
+                          </span>
+                          <TriStateIcon
+                            value={(() => {
+                              try {
+                                return JSON.parse(
+                                  job.expectationMatches ?? "{}",
+                                ).location;
+                              } catch {
+                                return undefined;
+                              }
+                            })()}
+                          />
+                        </div>
+                        {job.reason && (
+                          <div className="flex gap-1">
+                            <span className="text-stone-400 shrink-0 w-20">
+                              Reason
+                            </span>
+                            <span className="text-stone-700 text-xs leading-relaxed">
+                              {job.reason.slice(0, 120)}
+                              {job.reason.length > 120 ? "…" : ""}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
