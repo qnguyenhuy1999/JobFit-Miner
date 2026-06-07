@@ -1,21 +1,30 @@
 import { z } from "zod";
 import { mineJobs, getCrawlerForUrl } from "@/crawlers";
-import { getRankedJobs, updateJobAnalysis, upsertJobs, recordMiningRun } from "@/lib/repository";
+import {
+  getRankedJobs,
+  updateJobAnalysis,
+  saveNewJobs,
+  recordMiningRun,
+} from "@/lib/repository";
 import { scoreJob, analyzeTechStackFit } from "@/lib/scorer";
 import { buildSearchKeywords } from "@/lib/search-keywords";
 import { extractJobDetails } from "@/lib/detail-extractor";
-import type { RawJob } from "@/lib/types";
+import type { JobItem, RawJob } from "@/lib/types";
 
 const TechStackSchema = z.object({
   primary: z.array(z.string()),
   secondary: z.array(z.string()).default([]),
   learning: z.array(z.string()).default([]),
   avoid: z.array(z.string()).default([]),
-  seniority: z.enum(["intern", "junior", "middle", "senior", "lead"]).optional(),
+  seniority: z
+    .enum(["intern", "junior", "middle", "senior", "lead"])
+    .optional(),
 });
 
 const ExpectationsSchema = z.object({
-  preferredWorkModes: z.array(z.enum(["remote", "hybrid", "onsite"])).default([]),
+  preferredWorkModes: z
+    .array(z.enum(["remote", "hybrid", "onsite"]))
+    .default([]),
   minimumSalary: z.string().optional(),
   requiredBenefits: z.array(z.string()).default([]),
   niceToHaveBenefits: z.array(z.string()).default([]),
@@ -42,7 +51,16 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.message }, { status: 400 });
   }
 
-  const { siteUrl, profile, techStack, expectations, expectationsText, keyword, location, limit } = parsed.data;
+  const {
+    siteUrl,
+    profile,
+    techStack,
+    expectations,
+    expectationsText,
+    keyword,
+    location,
+    limit,
+  } = parsed.data;
 
   // Generate keywords: structured tech stack → keyword generator, else single keyword
   const keywords: string[] = techStack
@@ -50,7 +68,7 @@ export async function POST(req: Request) {
     : [keyword ?? "developer"];
 
   // Mine jobs for each keyword, collect all
-  let allItems: RawJob[] = [];
+  const allItems: RawJob[] = [];
   try {
     for (const kw of keywords) {
       const items = await mineJobs(siteUrl, kw, location);
@@ -92,10 +110,28 @@ export async function POST(req: Request) {
     // Fall back to listing data
   }
 
-  // Upsert to DB
-  const upserted = await upsertJobs(detailedItems as any);
+  // Persist only new jobs; existing ones are left available through saved jobs/history.
+  const site = new URL(siteUrl).hostname;
+  const jobsToSave: JobItem[] = detailedItems.map((job) => ({
+    site,
+    title: job.title,
+    company: job.company ?? undefined,
+    location: job.location ?? undefined,
+    url: job.url,
+    description: job.description ?? undefined,
+  }));
+  const { jobs: upserted, existingJobs } = await saveNewJobs(jobsToSave);
   const upsertedIds = new Set(upserted.map((j) => j.id));
-  const detailMap = new Map(detailedItems.map((d) => [d.url, d as RawJob & { fullDescription?: string | null; salary?: string | null; workMode?: string | null }]));
+  const detailMap = new Map(
+    detailedItems.map((d) => [
+      d.url,
+      d as RawJob & {
+        fullDescription?: string | null;
+        salary?: string | null;
+        workMode?: string | null;
+      },
+    ]),
+  );
 
   // Score each job sequentially
   let scored = 0;
@@ -148,5 +184,9 @@ export async function POST(req: Request) {
   const ranked = await getRankedJobs();
   const result = ranked.filter((j) => upsertedIds.has(j.id));
 
-  return Response.json({ jobs: result, count: result.length });
+  return Response.json({
+    jobs: result,
+    count: result.length,
+    existingCount: existingJobs.length,
+  });
 }
