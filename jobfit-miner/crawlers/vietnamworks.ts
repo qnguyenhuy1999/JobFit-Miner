@@ -1,4 +1,5 @@
 import type { JobCrawler } from "../lib/types.ts";
+import type { RawJob, DetailedJob } from "../lib/types.ts";
 import { minePublicJobs } from "./shared.ts";
 
 export const vietnamworksCrawler: JobCrawler = {
@@ -60,5 +61,29 @@ export const vietnamworksCrawler: JobCrawler = {
       keyword,
       location,
     );
+  },
+
+  async extractDetail(page: import("playwright").Page, job: RawJob): Promise<DetailedJob> {
+    try {
+      await page.goto(job.url, { waitUntil: "domcontentloaded", timeout: 15000 });
+      await page.waitForSelector(".job-description, [class*='description'], .job-detail", { timeout: 8000 }).catch(() => null);
+      const fullDescription = await page.evaluate(() => {
+        const el = document.querySelector(".job-description") ?? document.querySelector("[class*='description']") ?? document.querySelector(".job-detail");
+        return (el as HTMLElement | null)?.innerText?.trim() ?? null;
+      }).catch(() => null);
+      const salary = await page.evaluate(() => {
+        const el = document.querySelector("[class*='salary'], .salary");
+        return (el as HTMLElement | null)?.innerText?.trim() ?? null;
+      }).catch(() => null);
+      const workMode = await page.evaluate(() => {
+        const text = document.body.innerText.toLowerCase();
+        if (/remote|làm từ xa/.test(text)) return "remote";
+        if (/hybrid|kết hợp/.test(text)) return "hybrid";
+        return null;
+      }).catch(() => null);
+      return { ...job, fullDescription: fullDescription ?? job.description, salary, workMode };
+    } catch {
+      return { ...job, fullDescription: job.description };
+    }
   },
 };

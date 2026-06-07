@@ -1,15 +1,37 @@
 import { z } from "zod";
-import { mineJobs } from "@/crawlers";
+import { mineJobs, getCrawlerForUrl } from "@/crawlers";
 import { getRankedJobs, updateJobAnalysis, upsertJobs, recordMiningRun } from "@/lib/repository";
-import { scoreJob } from "@/lib/scorer";
+import { scoreJob, analyzeTechStackFit } from "@/lib/scorer";
+import { buildSearchKeywords } from "@/lib/search-keywords";
+import { extractJobDetails } from "@/lib/detail-extractor";
+import type { RawJob } from "@/lib/types";
+
+const TechStackSchema = z.object({
+  primary: z.array(z.string()),
+  secondary: z.array(z.string()).default([]),
+  learning: z.array(z.string()).default([]),
+  avoid: z.array(z.string()).default([]),
+  seniority: z.enum(["intern", "junior", "middle", "senior", "lead"]).optional(),
+});
+
+const ExpectationsSchema = z.object({
+  preferredWorkModes: z.array(z.enum(["remote", "hybrid", "onsite"])).default([]),
+  minimumSalary: z.string().optional(),
+  requiredBenefits: z.array(z.string()).default([]),
+  niceToHaveBenefits: z.array(z.string()).default([]),
+  locations: z.array(z.string()).default([]),
+  note: z.string().optional(),
+});
 
 const bodySchema = z.object({
   siteUrl: z.string().url(),
-  keyword: z.string().min(1),
   profile: z.string().min(1),
-  expectations: z.string().min(1).optional(),
+  techStack: TechStackSchema.optional(),
+  expectations: ExpectationsSchema.optional(),
+  expectationsText: z.string().optional(),
+  keyword: z.string().optional(),
   location: z.string().optional(),
-  limit: z.number().int().min(1).max(20).optional(),
+  limit: z.number().int().min(1).max(20).default(20),
 });
 
 export async function POST(req: Request) {
@@ -20,19 +42,20 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.message }, { status: 400 });
   }
 
-  const {
-    siteUrl,
-    keyword,
-    profile,
-    expectations,
-    location,
-    limit = 20,
-  } = parsed.data;
+  const { siteUrl, profile, techStack, expectations, expectationsText, keyword, location, limit } = parsed.data;
 
-  // Mine jobs
-  let items;
+  // Generate keywords: structured tech stack → keyword generator, else single keyword
+  const keywords: string[] = techStack
+    ? buildSearchKeywords({ techStack, baseKeyword: keyword || undefined })
+    : [keyword ?? "developer"];
+
+  // Mine jobs for each keyword, collect all
+  let allItems: RawJob[] = [];
   try {
-    items = await mineJobs(siteUrl, keyword, location);
+    for (const kw of keywords) {
+      const items = await mineJobs(siteUrl, kw, location);
+      allItems.push(...items.map((j) => ({ ...j })));
+    }
   } catch (err) {
     return Response.json(
       { error: err instanceof Error ? err.message : "Mining failed" },
@@ -40,7 +63,7 @@ export async function POST(req: Request) {
     );
   }
 
-  if (items.length === 0) {
+  if (allItems.length === 0) {
     return Response.json({
       jobs: [],
       count: 0,
@@ -48,15 +71,57 @@ export async function POST(req: Request) {
     });
   }
 
-  // Upsert to DB
-  const upserted = await upsertJobs(items.slice(0, limit));
-  const upsertedIds = new Set(upserted.map((j) => j.id));
+  // Dedup by URL and cap at limit
+  const seen = new Set<string>();
+  const dedupedItems = allItems.filter((j) => {
+    if (seen.has(j.url)) return false;
+    seen.add(j.url);
+    return true;
+  });
+  const limitedItems = dedupedItems.slice(0, limit);
 
-  // Score each job sequentially to keep provider requests predictable.
+  // Extract detail pages if crawler supports it
+  let detailedItems: RawJob[] = limitedItems;
+  try {
+    const crawler = getCrawlerForUrl(siteUrl);
+    if (crawler) {
+      const { detailed } = await extractJobDetails(limitedItems, crawler);
+      detailedItems = detailed;
+    }
+  } catch {
+    // Fall back to listing data
+  }
+
+  // Upsert to DB
+  const upserted = await upsertJobs(detailedItems as any);
+  const upsertedIds = new Set(upserted.map((j) => j.id));
+  const detailMap = new Map(detailedItems.map((d) => [d.url, d as RawJob & { fullDescription?: string | null; salary?: string | null; workMode?: string | null }]));
+
+  // Score each job sequentially
   let scored = 0;
   for (const job of upserted) {
     try {
-      const analysis = await scoreJob(profile, job, expectations);
+      const detail = detailMap.get(job.url);
+      let analysis;
+      if (techStack && expectations) {
+        analysis = await analyzeTechStackFit({
+          profile,
+          techStack,
+          expectations,
+          job: {
+            title: job.title,
+            company: job.company,
+            location: job.location,
+            url: job.url,
+            description: job.description,
+            fullDescription: detail?.fullDescription,
+            salary: detail?.salary,
+            workMode: detail?.workMode,
+          },
+        });
+      } else {
+        analysis = await scoreJob(profile, job, expectationsText);
+      }
       await updateJobAnalysis(job.id, analysis);
       scored++;
     } catch {
@@ -73,7 +138,7 @@ export async function POST(req: Request) {
   }
 
   await recordMiningRun({
-    keywords: keyword,
+    keywords: keywords.join(", "),
     site: new URL(siteUrl).hostname,
     location,
     found: upserted.length,

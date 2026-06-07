@@ -25,6 +25,7 @@ model Job {
   missingSkills      String?
   expectationMatches String?
   redFlags           String?
+  detectedTechStack  String?
   status             String   @default("new")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @default(now()) @updatedAt

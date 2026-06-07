@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getProfileSetupState } from "@/lib/profile-setup";
 import { SUPPORTED_SITES } from "@/crawlers/sites";
+import { buildSearchKeywords } from "@/lib/search-keywords";
+import type { CandidateTechStack } from "@/lib/types";
 
 type Job = {
   id: number;
@@ -20,6 +22,8 @@ type Job = {
   redFlags: string | null;
   salary: string | null;
   workMode: string | null;
+  detectedTechStack: string | null;
+  expectationMatches: string | null;
   status: string;
   createdAt?: string;
 };
@@ -189,6 +193,7 @@ function JobCard({
   isTop,
   compareSelected,
   onToggleCompare,
+  onViewDetails,
 }: {
   job: Job;
   coverLetter?: string;
@@ -197,6 +202,7 @@ function JobCard({
   isTop: boolean;
   compareSelected?: boolean;
   onToggleCompare?: () => void;
+  onViewDetails?: () => void;
 }) {
   return (
     <div
@@ -252,9 +258,38 @@ function JobCard({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        {job.workMode && (
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${job.workMode === "remote" ? "bg-green-50 text-green-700 border border-green-200" : job.workMode === "hybrid" ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-stone-100 text-stone-600 border border-stone-200"}`}>
+            {job.workMode}
+          </span>
+        )}
+        {job.salary && (
+          <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">{job.salary}</span>
+        )}
+        {job.detectedTechStack && (() => {
+          try {
+            const techs = JSON.parse(job.detectedTechStack) as string[];
+            if (techs.length === 0) return null;
+            const shown = techs.slice(0, 5);
+            const extra = techs.length - shown.length;
+            return (
+              <div className="flex flex-wrap gap-1">
+                {shown.map((t) => <span key={t} className="text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded">{t}</span>)}
+                {extra > 0 && <span className="text-xs text-stone-400">+{extra} more</span>}
+              </div>
+            );
+          } catch { return null; }
+        })()}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 pt-0.5">
         <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-xs text-orange-500 font-semibold hover:underline">
           View job ↗
         </a>
+        {onViewDetails && (
+          <button onClick={onViewDetails} className="text-xs text-stone-500 hover:text-stone-700 underline">
+            View details
+          </button>
+        )}
         {onToggleCompare && (
           <label className="flex items-center gap-1 text-xs text-stone-500 cursor-pointer">
             <input type="checkbox" checked={compareSelected} onChange={onToggleCompare} className="accent-orange-500" />
@@ -415,12 +450,28 @@ export default function Home() {
     setError(null);
     setLoadingScore(true);
     try {
+      const parsedTechStack = {
+        primary: techStack.primary.split(",").map((s) => s.trim()).filter(Boolean),
+        secondary: techStack.secondary.split(",").map((s) => s.trim()).filter(Boolean),
+        learning: techStack.learning.split(",").map((s) => s.trim()).filter(Boolean),
+        avoid: techStack.avoid.split(",").map((s) => s.trim()).filter(Boolean),
+        seniority: techStack.seniority || undefined,
+      };
+      const parsedExpectations = {
+        preferredWorkModes: expectations.preferredWorkModes,
+        minimumSalary: expectations.minimumSalary || undefined,
+        requiredBenefits: expectations.requiredBenefits.split(",").map((s) => s.trim()).filter(Boolean),
+        niceToHaveBenefits: expectations.niceToHaveBenefits.split(",").map((s) => s.trim()).filter(Boolean),
+        locations: expectations.locations.split(",").map((s) => s.trim()).filter(Boolean),
+        note: expectations.note || undefined,
+      };
       const res = await fetch("/api/score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           profile,
-          expectations: profile,
+          expectations: parsedExpectations,
+          techStack: parsedTechStack,
           jobIds: jobs.map((job) => job.id),
         }),
       });
@@ -434,6 +485,65 @@ export default function Home() {
       setLoadingScore(false);
     }
   }
+
+  const [techStack, setTechStack] = useState<{
+    primary: string;
+    secondary: string;
+    learning: string;
+    avoid: string;
+    seniority: "intern" | "junior" | "middle" | "senior" | "lead" | "";
+  }>({
+    primary: "React, Next.js, TypeScript, Node.js",
+    secondary: "NestJS, Prisma",
+    learning: "AWS",
+    avoid: "PHP",
+    seniority: "middle",
+  });
+
+  const [expectations, setExpectations] = useState({
+    preferredWorkModes: ["remote", "hybrid"] as Array<"remote" | "hybrid" | "onsite">,
+    minimumSalary: "",
+    requiredBenefits: "",
+    niceToHaveBenefits: "",
+    locations: "Ho Chi Minh City",
+    note: "",
+  });
+
+  const [filters, setFilters] = useState({
+    remoteOnly: false,
+    hybridOnly: false,
+    hasInsurance: false,
+    hideRedFlags: false,
+    minScore: 0,
+    strongOnly: false,
+  });
+
+  const [drawerJob, setDrawerJob] = useState<Job | null>(null);
+
+  const previewKeywords = useMemo(() => {
+    const parsed: CandidateTechStack = {
+      primary: techStack.primary.split(",").map((s) => s.trim()).filter(Boolean),
+      secondary: techStack.secondary.split(",").map((s) => s.trim()).filter(Boolean),
+      learning: techStack.learning.split(",").map((s) => s.trim()).filter(Boolean),
+      avoid: techStack.avoid.split(",").map((s) => s.trim()).filter(Boolean),
+      seniority: techStack.seniority || undefined,
+    };
+    return buildSearchKeywords({ techStack: parsed });
+  }, [techStack]);
+
+  const filteredJobs = useMemo(() => {
+    return jobs.filter((job) => {
+      const em = (() => { try { return JSON.parse(job.expectationMatches ?? "{}"); } catch { return {}; } })();
+      const rf = (() => { try { return JSON.parse(job.redFlags ?? "[]") as string[]; } catch { return []; } })();
+      if (filters.remoteOnly && job.workMode !== "remote" && em?.workMode !== true) return false;
+      if (filters.hybridOnly && job.workMode !== "hybrid") return false;
+      if (filters.hasInsurance && em?.socialInsurance !== true) return false;
+      if (filters.hideRedFlags && rf.length > 0) return false;
+      if (filters.minScore > 0 && (job.score ?? 0) < filters.minScore) return false;
+      if (filters.strongOnly && job.fitLevel !== "strong") return false;
+      return true;
+    });
+  }, [jobs, filters]);
 
   const [compareIds, setCompareIds] = useState<Set<number>>(new Set());
 
@@ -484,8 +594,11 @@ export default function Home() {
   const sortedJobs = [...jobs].sort(
     (a, b) => (b.score ?? -1) - (a.score ?? -1),
   );
-  const topJobs = sortedJobs.filter((j) => (j.score ?? -1) >= 70);
-  const otherJobs = sortedJobs.filter((j) => (j.score ?? -1) < 70);
+  const sortedFilteredJobs = [...filteredJobs].sort(
+    (a, b) => (b.score ?? -1) - (a.score ?? -1),
+  );
+  const topJobs = sortedFilteredJobs.filter((j) => (j.score ?? -1) >= 70);
+  const otherJobs = sortedFilteredJobs.filter((j) => (j.score ?? -1) < 70);
   const profileSetupState = getProfileSetupState({
     hasSavedProfile: Boolean(savedProfile),
     loadingProfile,
@@ -662,6 +775,131 @@ export default function Home() {
                 <option value="">Anywhere</option>
               </select>
             </div>
+
+            {/* Tech Stack Section */}
+            <div className="mt-4 border-t border-stone-100 pt-4">
+              <h3 className="text-sm font-semibold text-stone-700 mb-3">Tech Stack</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-stone-500 mb-1">Primary Stack *</label>
+                  <input
+                    type="text"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    value={techStack.primary}
+                    onChange={(e) => setTechStack((prev) => ({ ...prev, primary: e.target.value }))}
+                    placeholder="React, Next.js, TypeScript"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-stone-500 mb-1">Secondary Stack</label>
+                  <input
+                    type="text"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    value={techStack.secondary}
+                    onChange={(e) => setTechStack((prev) => ({ ...prev, secondary: e.target.value }))}
+                    placeholder="NestJS, Prisma"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-stone-500 mb-1">Learning</label>
+                  <input
+                    type="text"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    value={techStack.learning}
+                    onChange={(e) => setTechStack((prev) => ({ ...prev, learning: e.target.value }))}
+                    placeholder="AWS, Kubernetes"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-stone-500 mb-1">Avoid Tech</label>
+                  <input
+                    type="text"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    value={techStack.avoid}
+                    onChange={(e) => setTechStack((prev) => ({ ...prev, avoid: e.target.value }))}
+                    placeholder="PHP, jQuery"
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="block text-xs text-stone-500 mb-1">Seniority</label>
+                <select
+                  className="border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                  value={techStack.seniority}
+                  onChange={(e) => setTechStack((prev) => ({ ...prev, seniority: e.target.value as typeof techStack.seniority }))}
+                >
+                  <option value="">Not specified</option>
+                  <option value="intern">Intern</option>
+                  <option value="junior">Junior</option>
+                  <option value="middle">Middle</option>
+                  <option value="senior">Senior</option>
+                  <option value="lead">Lead</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Expectations Section */}
+            <div className="mt-4 border-t border-stone-100 pt-4">
+              <h3 className="text-sm font-semibold text-stone-700 mb-3">Expectations</h3>
+              <div className="mb-3">
+                <label className="block text-xs text-stone-500 mb-1">Work Modes</label>
+                <div className="flex gap-3">
+                  {(["remote", "hybrid", "onsite"] as const).map((mode) => (
+                    <label key={mode} className="flex items-center gap-1 text-sm capitalize cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={expectations.preferredWorkModes.includes(mode)}
+                        onChange={(e) => {
+                          setExpectations((prev) => ({
+                            ...prev,
+                            preferredWorkModes: e.target.checked
+                              ? [...prev.preferredWorkModes, mode]
+                              : prev.preferredWorkModes.filter((m) => m !== mode),
+                          }));
+                        }}
+                      />
+                      {mode}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-stone-500 mb-1">Min Salary</label>
+                  <input
+                    type="text"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    value={expectations.minimumSalary}
+                    onChange={(e) => setExpectations((prev) => ({ ...prev, minimumSalary: e.target.value }))}
+                    placeholder="e.g. $2000/month"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-stone-500 mb-1">Locations</label>
+                  <input
+                    type="text"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    value={expectations.locations}
+                    onChange={(e) => setExpectations((prev) => ({ ...prev, locations: e.target.value }))}
+                    placeholder="Ho Chi Minh City"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Keyword preview */}
+            {previewKeywords.length > 0 && (
+              <div className="mt-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
+                <p className="text-xs text-stone-500 mb-2 font-medium">Keywords from your tech stack:</p>
+                <div className="flex flex-wrap gap-1">
+                  {previewKeywords.map((kw) => (
+                    <span key={kw} className="text-xs bg-white border border-stone-200 text-stone-600 px-2 py-0.5 rounded">
+                      {kw}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -828,7 +1066,7 @@ export default function Home() {
                   {topJobs.length} strong match
                   {topJobs.length !== 1 ? "es" : ""}
                 </span>{" "}
-                out of {sortedJobs.length} jobs
+                out of {jobs.length} jobs
               </p>
             </div>
             <button
@@ -839,7 +1077,40 @@ export default function Home() {
             </button>
           </div>
 
-          {sortedJobs.length === 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {[
+              { key: "remoteOnly", label: "Remote only" },
+              { key: "hybridOnly", label: "Hybrid only" },
+              { key: "hasInsurance", label: "Has insurance" },
+              { key: "hideRedFlags", label: "Hide red flags" },
+              { key: "strongOnly", label: "Strong fit only" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setFilters((prev) => ({ ...prev, [key]: !prev[key as keyof typeof filters] }))}
+                className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                  filters[key as keyof typeof filters]
+                    ? "bg-stone-800 text-white border-stone-800"
+                    : "bg-white text-stone-600 border-stone-200 hover:border-stone-400"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-stone-500">Min score:</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={filters.minScore}
+                onChange={(e) => setFilters((prev) => ({ ...prev, minScore: Number(e.target.value) }))}
+                className="w-14 border border-stone-200 rounded px-2 py-1 text-xs"
+              />
+            </div>
+          </div>
+
+          {sortedFilteredJobs.length === 0 && (
             <p className="text-sm text-stone-400 italic">
               No scored jobs to display.
             </p>
@@ -860,6 +1131,7 @@ export default function Home() {
                   isTop
                   compareSelected={compareIds.has(job.id)}
                   onToggleCompare={() => toggleCompare(job.id)}
+                  onViewDetails={() => setDrawerJob(job)}
                 />
               ))}
             </div>
@@ -880,6 +1152,7 @@ export default function Home() {
                   isTop={false}
                   compareSelected={compareIds.has(job.id)}
                   onToggleCompare={() => toggleCompare(job.id)}
+                  onViewDetails={() => setDrawerJob(job)}
                 />
               ))}
             </div>
@@ -909,6 +1182,73 @@ export default function Home() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {drawerJob && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-black/40" onClick={() => setDrawerJob(null)} />
+          <div className="w-full max-w-2xl bg-white overflow-y-auto p-6 shadow-xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold text-stone-800">{drawerJob.title}</h2>
+              <button onClick={() => setDrawerJob(null)} className="text-stone-400 hover:text-stone-600 text-xl">✕</button>
+            </div>
+            <p className="text-sm text-stone-500 mb-2">{drawerJob.company} · {drawerJob.location}</p>
+            <a href={drawerJob.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline mb-4 block">
+              Open original job page →
+            </a>
+
+            <div className="flex gap-2 mb-4 flex-wrap">
+              {drawerJob.score !== null && (
+                <span className={`px-2 py-1 rounded text-xs font-bold ${drawerJob.score >= 70 ? "bg-green-100 text-green-800" : drawerJob.score >= 40 ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}>
+                  Score: {drawerJob.score}
+                </span>
+              )}
+              {drawerJob.fitLevel && (
+                <span className="px-2 py-1 rounded text-xs bg-stone-100 text-stone-700 capitalize">{drawerJob.fitLevel}</span>
+              )}
+              {drawerJob.workMode && (
+                <span className={`px-2 py-1 rounded text-xs ${drawerJob.workMode === "remote" ? "bg-green-50 text-green-700" : drawerJob.workMode === "hybrid" ? "bg-blue-50 text-blue-700" : "bg-stone-100 text-stone-600"}`}>
+                  {drawerJob.workMode}
+                </span>
+              )}
+              {drawerJob.salary && (
+                <span className="px-2 py-1 rounded text-xs bg-amber-50 text-amber-700">{drawerJob.salary}</span>
+              )}
+            </div>
+
+            {drawerJob.reason && <p className="text-sm text-stone-600 mb-4">{drawerJob.reason}</p>}
+
+            {drawerJob.detectedTechStack && (() => {
+              try {
+                const techs = JSON.parse(drawerJob.detectedTechStack) as string[];
+                return techs.length > 0 ? (
+                  <div className="mb-4">
+                    <p className="text-xs font-medium text-stone-500 mb-1">Detected Tech Stack</p>
+                    <div className="flex flex-wrap gap-1">
+                      {techs.map((t) => <span key={t} className="text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded">{t}</span>)}
+                    </div>
+                  </div>
+                ) : null;
+              } catch { return null; }
+            })()}
+
+            {drawerJob.redFlags && (() => {
+              try {
+                const flags = JSON.parse(drawerJob.redFlags) as string[];
+                return flags.length > 0 ? (
+                  <div className="mb-4 p-3 bg-red-50 rounded-lg">
+                    <p className="text-xs font-medium text-red-700 mb-1">Red Flags</p>
+                    {flags.map((f) => <p key={f} className="text-xs text-red-600">• {f}</p>)}
+                  </div>
+                ) : null;
+              } catch { return null; }
+            })()}
+
+            <details open>
+              <summary className="text-sm font-medium text-stone-700 cursor-pointer mb-2">Full job description</summary>
+              <pre className="whitespace-pre-wrap text-xs text-stone-600 bg-stone-50 p-3 rounded-lg max-h-96 overflow-y-auto">{drawerJob.description}</pre>
+            </details>
+          </div>
         </div>
       )}
     </main>

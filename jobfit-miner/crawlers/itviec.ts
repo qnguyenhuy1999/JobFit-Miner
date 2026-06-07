@@ -1,6 +1,7 @@
 import { chromium } from "playwright";
 import { extractJobsWithConfiguredAi } from "../lib/ai-job-miner.ts";
 import type { JobCrawler, JobItem } from "../lib/types.ts";
+import type { RawJob, DetailedJob } from "../lib/types.ts";
 
 type ScrapedJob = {
   title: string;
@@ -148,5 +149,40 @@ export const itviecCrawler: JobCrawler = {
         : await scrapeJobs(siteUrl, keyword, location, false);
 
     return mineWithAiFallback(siteUrl, keyword, location, resolvedResult);
+  },
+
+  async extractDetail(page: import("playwright").Page, job: RawJob): Promise<DetailedJob> {
+    try {
+      await page.goto(job.url, { waitUntil: "domcontentloaded", timeout: 15000 });
+      await page.waitForSelector(".job-description, .jd-body, [class*='description']", { timeout: 8000 }).catch(() => null);
+
+      const fullDescription = await page.evaluate(() => {
+        const el = document.querySelector(".job-description")
+          ?? document.querySelector("[class*='description']");
+        return (el as HTMLElement | null)?.innerText?.trim() ?? null;
+      }).catch(() => null);
+
+      const salary = await page.evaluate(() => {
+        const el = document.querySelector("[class*='salary']");
+        return (el as HTMLElement | null)?.innerText?.trim() ?? null;
+      }).catch(() => null);
+
+      const workMode = await page.evaluate(() => {
+        const tags = Array.from(document.querySelectorAll("[class*='tag'], [class*='badge']"))
+          .map((el) => el.textContent?.toLowerCase() ?? "");
+        if (tags.some((t) => t.includes("remote"))) return "remote";
+        if (tags.some((t) => t.includes("hybrid"))) return "hybrid";
+        return null;
+      }).catch(() => null);
+
+      return {
+        ...job,
+        fullDescription: fullDescription ?? job.description,
+        salary,
+        workMode,
+      };
+    } catch {
+      return { ...job, fullDescription: job.description };
+    }
   },
 };

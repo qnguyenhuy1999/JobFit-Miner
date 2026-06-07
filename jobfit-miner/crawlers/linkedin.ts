@@ -1,4 +1,5 @@
 import type { JobCrawler } from "../lib/types.ts";
+import type { RawJob, DetailedJob } from "../lib/types.ts";
 import { minePublicJobs } from "./shared.ts";
 
 export const linkedinCrawler: JobCrawler = {
@@ -47,5 +48,23 @@ export const linkedinCrawler: JobCrawler = {
       keyword,
       location,
     );
+  },
+
+  async extractDetail(page: import("playwright").Page, job: RawJob): Promise<DetailedJob> {
+    try {
+      await page.goto(job.url, { waitUntil: "domcontentloaded", timeout: 15000 });
+      const currentUrl = page.url();
+      if (currentUrl.includes("/login") || currentUrl.includes("/authwall") || currentUrl.includes("/checkpoint")) {
+        return { ...job, fullDescription: job.description };
+      }
+      await page.waitForSelector(".description__text, .show-more-less-html", { timeout: 8000 }).catch(() => null);
+      const fullDescription = await page.evaluate(() => {
+        const el = document.querySelector(".description__text") ?? document.querySelector(".show-more-less-html");
+        return (el as HTMLElement | null)?.innerText?.trim() ?? null;
+      }).catch(() => null);
+      return { ...job, fullDescription: fullDescription ?? job.description };
+    } catch {
+      return { ...job, fullDescription: job.description };
+    }
   },
 };

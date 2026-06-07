@@ -4,6 +4,7 @@ import {
   type CompletionLike,
   parseStructuredCompletion,
 } from "./ai-completion.ts";
+import type { CandidateTechStack, CandidateExpectations, DetailedJob } from "./types.ts";
 
 const TriState = z.union([z.boolean(), z.literal("unknown")]);
 
@@ -20,6 +21,26 @@ const AnalysisSchema = z.object({
 const CoverLetterSchema = z.object({
   coverLetter: z.string(),
 });
+
+export const JobAnalysisSchema = z.object({
+  score: z.number().int().min(0).max(100),
+  fitLevel: z.enum(["strong", "partial", "low"]),
+  reason: z.string(),
+  detectedTechStack: z.array(z.string()).default([]),
+  matchedSkills: z.array(z.string()).default([]),
+  missingSkills: z.array(z.string()).default([]),
+  seniorityFit: z.union([z.boolean(), z.literal("unknown")]).default("unknown"),
+  expectationMatches: z.object({
+    workMode: z.union([z.boolean(), z.literal("unknown")]).default("unknown"),
+    salary: z.union([z.boolean(), z.literal("unknown")]).default("unknown"),
+    benefits: z.union([z.boolean(), z.literal("unknown")]).default("unknown"),
+    socialInsurance: z.union([z.boolean(), z.literal("unknown")]).default("unknown"),
+    location: z.union([z.boolean(), z.literal("unknown")]).default("unknown"),
+  }),
+  redFlags: z.array(z.string()).default([]),
+});
+
+export type JobAnalysis = z.infer<typeof JobAnalysisSchema>;
 
 function tokenize(text: string) {
   const aliases: Record<string, string> = {
@@ -148,6 +169,72 @@ From the job description, I am particularly drawn to ${jobSummary}. I can contri
 Thank you for your time and consideration. I would welcome the opportunity to discuss how my experience can support ${company}'s goals.`;
 }
 
+function localAnalyzeTechStackFit(input: {
+  techStack: CandidateTechStack;
+  expectations: CandidateExpectations;
+  job: DetailedJob;
+}): JobAnalysis {
+  const text = (input.job.fullDescription ?? input.job.description ?? "").toLowerCase();
+  const primary = input.techStack.primary.map((s) => s.toLowerCase());
+  const secondary = input.techStack.secondary.map((s) => s.toLowerCase());
+  const avoid = input.techStack.avoid.map((s) => s.toLowerCase());
+
+  const detectedTech = [...primary, ...secondary].filter((t) => text.includes(t));
+  const matchedPrimary = primary.filter((t) => text.includes(t));
+  const missingPrimary = primary.filter((t) => !text.includes(t));
+  const avoidFound = avoid.filter((t) => text.includes(t));
+
+  let score = 30;
+  score += matchedPrimary.length * 10;
+  score += secondary.filter((t) => text.includes(t)).length * 4;
+  score += input.techStack.learning.filter((t) => text.toLowerCase().includes(t.toLowerCase())).length * 2;
+  score -= avoidFound.length * 20;
+  score = Math.max(5, Math.min(95, score));
+
+  const isRemote = /(remote|work from home|làm việc từ xa)/i.test(text);
+  const isHybrid = /(hybrid|kết hợp)/i.test(text);
+  const isOnsite = /(onsite|on-site|tại văn phòng)/i.test(text);
+  const hasInsurance = /(social insurance|bhxh|bảo hiểm xã hội|insurance)/i.test(text);
+
+  const redFlags: string[] = [];
+  if (/unpaid|training fee|bond|phí đào tạo/i.test(text)) redFlags.push("Training fee or bond clause");
+  if (/overtime required|OT nhiều|mandatory OT/i.test(text)) redFlags.push("Excessive overtime required");
+  if (/night shift/i.test(text)) redFlags.push("Night shift required");
+
+  const seniorityText = input.techStack.seniority;
+  let seniorityFit: boolean | "unknown" = "unknown";
+  if (seniorityText) {
+    seniorityFit = text.includes(seniorityText) ? true : "unknown";
+  }
+
+  const modes = input.expectations.preferredWorkModes;
+  let workModeMatch: boolean | "unknown" = "unknown";
+  if (modes.length > 0) {
+    if (modes.includes("remote") && isRemote) workModeMatch = true;
+    else if (modes.includes("hybrid") && isHybrid) workModeMatch = true;
+    else if (modes.includes("onsite") && isOnsite) workModeMatch = true;
+    else if (isRemote || isHybrid || isOnsite) workModeMatch = false;
+  }
+
+  return {
+    score,
+    fitLevel: score >= 70 ? "strong" : score >= 40 ? "partial" : "low",
+    reason: `Local analysis: matched ${matchedPrimary.length}/${primary.length} primary skills.${avoidFound.length > 0 ? ` Avoid-tech found: ${avoidFound.join(", ")}.` : ""} ${redFlags.length > 0 ? `Red flags: ${redFlags.join("; ")}.` : ""}`,
+    detectedTechStack: detectedTech,
+    matchedSkills: matchedPrimary,
+    missingSkills: missingPrimary,
+    seniorityFit,
+    expectationMatches: {
+      workMode: workModeMatch,
+      salary: "unknown",
+      benefits: "unknown",
+      socialInsurance: hasInsurance ? true : "unknown",
+      location: "unknown",
+    },
+    redFlags,
+  };
+}
+
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
   const baseURL = process.env.OPENAI_BASE_URL?.trim() || undefined;
@@ -214,6 +301,62 @@ export async function scoreJob(
   );
 
   return parseStructuredOutput(completion, AnalysisSchema);
+}
+
+export async function analyzeTechStackFit(input: {
+  profile: string;
+  techStack: CandidateTechStack;
+  expectations: CandidateExpectations;
+  job: DetailedJob;
+}): Promise<JobAnalysis> {
+  const client = getClient();
+  if (!client) return localAnalyzeTechStackFit(input);
+
+  const prompt = `You are evaluating a job description for a software engineering candidate.
+
+Candidate profile:
+${input.profile}
+
+Candidate tech stack:
+- Primary (must-have): ${input.techStack.primary.join(", ")}
+- Secondary (nice-to-have): ${input.techStack.secondary.join(", ")}
+- Learning (small bonus if present): ${input.techStack.learning.join(", ")}
+- Avoid (strong penalty): ${input.techStack.avoid.join(", ")}
+- Seniority: ${input.techStack.seniority ?? "not specified"}
+
+Candidate expectations:
+- Preferred work modes: ${input.expectations.preferredWorkModes.join(", ")}
+- Minimum salary: ${input.expectations.minimumSalary ?? "not specified"}
+- Required benefits: ${input.expectations.requiredBenefits.join(", ")}
+- Locations: ${input.expectations.locations.join(", ")}
+${input.expectations.note ? "Note: " + input.expectations.note : ""}
+
+Job:
+Title: ${input.job.title}
+Company: ${input.job.company ?? "Unknown"}
+Location: ${input.job.location ?? "Unknown"}
+Description: ${input.job.fullDescription ?? input.job.description ?? "No description"}
+
+Instructions:
+1. Read the FULL description, not just the title.
+2. Extract all technology names from the JD into detectedTechStack.
+3. Compare detected tech to candidate's primary/secondary/avoid stacks.
+4. Score 0-100: primary stack match up to 60pts, secondary bonus 15pts, learning bonus 5pts, avoid tech found subtract 20-40pts, seniority match bonus/penalty 5-10pts, work mode/location/benefits affect remaining 20pts.
+5. For expectationMatches: use true ONLY if JD explicitly confirms, false ONLY if JD explicitly contradicts, "unknown" if not mentioned. Do NOT invent salary, remote, hybrid, insurance data.
+6. For redFlags: flag unpaid work, training fees, bond clauses, mandatory excessive OT, night shift, onsite-only vs clearly remote preference, no insurance.
+7. reason: 2-3 sentences. Actionable. Explains apply/review/skip decision.
+
+Return valid JSON only. No markdown fences. Shape:
+{"score":number,"fitLevel":"strong"|"partial"|"low","reason":string,"detectedTechStack":string[],"matchedSkills":string[],"missingSkills":string[],"seniorityFit":true|false|"unknown","expectationMatches":{"workMode":true|false|"unknown","salary":true|false|"unknown","benefits":true|false|"unknown","socialInsurance":true|false|"unknown","location":true|false|"unknown"},"redFlags":string[]}`;
+
+  const completion = await callWithRetry(() =>
+    client.chat.completions.create({
+      model: "kr/claude-haiku-4.5",
+      messages: [{ role: "user", content: prompt }],
+    }),
+  );
+
+  return parseStructuredOutput(completion, JobAnalysisSchema);
 }
 
 function buildScorePrompt(

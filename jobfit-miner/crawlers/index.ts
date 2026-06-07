@@ -13,6 +13,10 @@ export async function mineJobs(siteUrl: string, keyword: string, location?: stri
   return crawler.mine(siteUrl, keyword, location);
 }
 
+export function getCrawlerForUrl(siteUrl: string) {
+  return crawlers.find((c) => c.canHandle(siteUrl)) ?? null;
+}
+
 export const __testables = {
   getCrawlerByUrl: getCrawlerSiteName,
 };

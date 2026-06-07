@@ -127,6 +127,10 @@ export async function updateJobAnalysis(
     missingSkills: string[];
     expectationMatches: Record<string, boolean | "unknown">;
     redFlags: string[];
+    detectedTechStack?: string[];
+    salary?: string;
+    workMode?: string;
+    benefits?: string[];
   },
 ) {
   return prisma.job.update({
@@ -139,6 +143,12 @@ export async function updateJobAnalysis(
       missingSkills: JSON.stringify(analysis.missingSkills),
       expectationMatches: JSON.stringify(analysis.expectationMatches),
       redFlags: JSON.stringify(analysis.redFlags),
+      detectedTechStack: analysis.detectedTechStack
+        ? JSON.stringify(analysis.detectedTechStack)
+        : undefined,
+      salary: analysis.salary ?? undefined,
+      workMode: analysis.workMode ?? undefined,
+      benefits: analysis.benefits ? JSON.stringify(analysis.benefits) : undefined,
     },
   });
 }
