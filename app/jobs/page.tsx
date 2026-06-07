@@ -33,7 +33,14 @@ const INITIAL_PAGINATION: Pagination = {
   hasNextPage: false,
 };
 
-const STATUS_OPTIONS = ["new", "saved", "interested", "applied", "rejected", "ignored"] as const;
+const STATUS_OPTIONS = [
+  "new",
+  "saved",
+  "interested",
+  "applied",
+  "rejected",
+  "ignored",
+] as const;
 type JobStatus = (typeof STATUS_OPTIONS)[number];
 
 const STATUS_COLORS: Record<JobStatus, string> = {
@@ -51,9 +58,18 @@ const FIT_COLORS: Record<string, string> = {
   low: "bg-red-50 text-red-500",
 };
 
-function StatusBadge({ status, jobId, onChange }: { status: string; jobId: number; onChange: (id: number, s: string) => void }) {
+function StatusBadge({
+  status,
+  jobId,
+  onChange,
+}: {
+  status: string;
+  jobId: number;
+  onChange: (id: number, s: string) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const color = STATUS_COLORS[status as JobStatus] ?? "bg-stone-100 text-stone-500";
+  const color =
+    STATUS_COLORS[status as JobStatus] ?? "bg-stone-100 text-stone-500";
   return (
     <div className="relative">
       <button
@@ -67,7 +83,10 @@ function StatusBadge({ status, jobId, onChange }: { status: string; jobId: numbe
           {STATUS_OPTIONS.map((s) => (
             <button
               key={s}
-              onClick={() => { onChange(jobId, s); setOpen(false); }}
+              onClick={() => {
+                onChange(jobId, s);
+                setOpen(false);
+              }}
               className="block w-full px-3 py-1.5 text-left text-xs capitalize hover:bg-stone-50"
             >
               {s}
@@ -118,7 +137,9 @@ export default function JobsPage() {
   }, [params]);
 
   async function handleStatusChange(jobId: number, newStatus: string) {
-    setJobs((prev) => prev.map((j) => j.id === jobId ? { ...j, status: newStatus } : j));
+    setJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, status: newStatus } : j)),
+    );
     await fetch(`/api/jobs/${jobId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -126,20 +147,28 @@ export default function JobsPage() {
     });
   }
 
-  function resetPage() { setPage(1); }
+  function resetPage() {
+    setPage(1);
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8">
       <section className="grid gap-3 rounded-xl border border-stone-200 bg-white p-4 shadow-sm md:grid-cols-4">
         <input
           value={query}
-          onChange={(e) => { resetPage(); setQuery(e.target.value); }}
+          onChange={(e) => {
+            resetPage();
+            setQuery(e.target.value);
+          }}
           placeholder="Search title, company, location"
-          className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-900 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         />
         <select
           value={site}
-          onChange={(e) => { resetPage(); setSite(e.target.value); }}
+          onChange={(e) => {
+            resetPage();
+            setSite(e.target.value);
+          }}
           className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-900 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         >
           <option value="">All sites</option>
@@ -150,13 +179,19 @@ export default function JobsPage() {
         </select>
         <input
           value={location}
-          onChange={(e) => { resetPage(); setLocation(e.target.value); }}
+          onChange={(e) => {
+            resetPage();
+            setLocation(e.target.value);
+          }}
           placeholder="Filter by location"
-          className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-900 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+          className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         />
         <select
           value={minScore}
-          onChange={(e) => { resetPage(); setMinScore(e.target.value); }}
+          onChange={(e) => {
+            resetPage();
+            setMinScore(e.target.value);
+          }}
           className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-900 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         >
           <option value="">Any score</option>
@@ -165,19 +200,27 @@ export default function JobsPage() {
         </select>
         <select
           value={status}
-          onChange={(e) => { resetPage(); setStatus(e.target.value); }}
+          onChange={(e) => {
+            resetPage();
+            setStatus(e.target.value);
+          }}
           className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-900 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
         >
           <option value="">All statuses</option>
           {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s} className="capitalize">{s}</option>
+            <option key={s} value={s} className="capitalize">
+              {s}
+            </option>
           ))}
         </select>
         <label className="flex items-center gap-2 text-sm text-stone-600 cursor-pointer">
           <input
             type="checkbox"
             checked={hideRejected}
-            onChange={(e) => { resetPage(); setHideRejected(e.target.checked); }}
+            onChange={(e) => {
+              resetPage();
+              setHideRejected(e.target.checked);
+            }}
             className="accent-orange-500"
           />
           Hide rejected / ignored
@@ -187,9 +230,13 @@ export default function JobsPage() {
       <section className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
           <div>
-            <h1 className="text-base font-bold text-stone-900">AI matched jobs</h1>
+            <h1 className="text-base font-bold text-stone-900">
+              AI matched jobs
+            </h1>
             <p className="text-sm text-stone-500">
-              {loading ? "Loading jobs..." : `${pagination.total} matching jobs`}
+              {loading
+                ? "Loading jobs..."
+                : `${pagination.total} matching jobs`}
             </p>
           </div>
           <div className="text-xs text-stone-500">
@@ -212,7 +259,10 @@ export default function JobsPage() {
             </thead>
             <tbody>
               {jobs.map((job) => (
-                <tr key={job.id} className="border-t border-stone-100 text-sm text-stone-700">
+                <tr
+                  key={job.id}
+                  className="border-t border-stone-100 text-sm text-stone-700"
+                >
                   <td className="px-4 py-3">
                     <a
                       href={job.url}
@@ -228,13 +278,21 @@ export default function JobsPage() {
                   <td className="px-4 py-3">{job.location ?? "-"}</td>
                   <td className="px-4 py-3">
                     {job.score !== null ? (
-                      <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${FIT_COLORS[job.fitLevel ?? ""] ?? "bg-stone-100 text-stone-600"}`}>
+                      <span
+                        className={`rounded-md px-2 py-0.5 text-xs font-bold ${FIT_COLORS[job.fitLevel ?? ""] ?? "bg-stone-100 text-stone-600"}`}
+                      >
                         {job.score}
                       </span>
-                    ) : "-"}
+                    ) : (
+                      "-"
+                    )}
                   </td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={job.status} jobId={job.id} onChange={handleStatusChange} />
+                    <StatusBadge
+                      status={job.status}
+                      jobId={job.id}
+                      onChange={handleStatusChange}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     {new Date(job.createdAt).toLocaleDateString()}
@@ -243,7 +301,10 @@ export default function JobsPage() {
               ))}
               {!loading && jobs.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-stone-400">
+                  <td
+                    colSpan={7}
+                    className="px-4 py-8 text-center text-sm text-stone-400"
+                  >
                     No jobs match the current filters.
                   </td>
                 </tr>

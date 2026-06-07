@@ -5,6 +5,7 @@ import { getProfileSetupState } from "@/lib/profile-setup";
 import { SUPPORTED_SITES } from "@/crawlers/sites";
 import { buildSearchKeywords } from "@/lib/search-keywords";
 import type { CandidateTechStack } from "@/lib/types";
+import { buildPresetPayload, getPostAnalyzeStep } from "@/lib/home-flow";
 
 type MiningRun = {
   id: number;
@@ -664,7 +665,12 @@ export default function Home() {
           } remain available in AI matched jobs.`,
         );
       }
-      setCurrentStep(data.jobs.length > 0 ? 3 : 1);
+      setCurrentStep(
+        getPostAnalyzeStep({
+          newJobsCount: data.jobs.length,
+          existingCount: data.existingCount ?? 0,
+        }),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Analysis failed");
       setCurrentStep(1);
@@ -844,12 +850,16 @@ export default function Home() {
     if (preset.techStack) {
       try {
         setTechStack(JSON.parse(preset.techStack));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     if (preset.expectations) {
       try {
         setExpectations(JSON.parse(preset.expectations));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -861,14 +871,16 @@ export default function Home() {
       const res = await fetch("/api/presets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          siteUrl,
-          keyword,
-          location,
-          techStack: JSON.stringify(techStack),
-          expectations: JSON.stringify(expectations),
-        }),
+        body: JSON.stringify(
+          buildPresetPayload({
+            name: name.trim(),
+            siteUrl,
+            keyword,
+            location,
+            techStack,
+            expectations,
+          }),
+        ),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not save preset");
@@ -889,7 +901,9 @@ export default function Home() {
         const res = await fetch("/api/presets");
         const data = await res.json();
         if (res.ok) setPresets(data.presets);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -897,9 +911,7 @@ export default function Home() {
     const prevJobStatus = jobs.find((j) => j.id === jobId)?.status ?? "new";
     const prevSavedStatus =
       savedJobs.find((j) => j.id === jobId)?.status ?? "new";
-    setJobs((prev) =>
-      prev.map((j) => (j.id === jobId ? { ...j, status } : j)),
-    );
+    setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status } : j)));
     setSavedJobs((prev) =>
       prev.map((j) => (j.id === jobId ? { ...j, status } : j)),
     );
@@ -1000,9 +1012,7 @@ export default function Home() {
                     {run.found} found · {run.scored} scored ·{" "}
                     {new Date(run.createdAt).toLocaleDateString()}
                   </p>
-                  {run.errors && (
-                    <p className="text-amber-600">⚠ Has errors</p>
-                  )}
+                  {run.errors && <p className="text-amber-600">⚠ Has errors</p>}
                 </div>
                 <button
                   onClick={() => {
@@ -1180,7 +1190,7 @@ export default function Home() {
                   </label>
                   <input
                     type="text"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                     value={techStack.primary}
                     onChange={(e) =>
                       setTechStack((prev) => ({
@@ -1197,7 +1207,7 @@ export default function Home() {
                   </label>
                   <input
                     type="text"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                     value={techStack.secondary}
                     onChange={(e) =>
                       setTechStack((prev) => ({
@@ -1214,7 +1224,7 @@ export default function Home() {
                   </label>
                   <input
                     type="text"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                     value={techStack.learning}
                     onChange={(e) =>
                       setTechStack((prev) => ({
@@ -1231,7 +1241,7 @@ export default function Home() {
                   </label>
                   <input
                     type="text"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                     value={techStack.avoid}
                     onChange={(e) =>
                       setTechStack((prev) => ({
@@ -1248,7 +1258,7 @@ export default function Home() {
                   Seniority
                 </label>
                 <select
-                  className="border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                  className="border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                   value={techStack.seniority}
                   onChange={(e) =>
                     setTechStack((prev) => ({
@@ -1308,7 +1318,7 @@ export default function Home() {
                   </label>
                   <input
                     type="text"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                     value={expectations.minimumSalary}
                     onChange={(e) =>
                       setExpectations((prev) => ({
@@ -1325,7 +1335,7 @@ export default function Home() {
                   </label>
                   <input
                     type="text"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 placeholder:text-stone-300 bg-stone-50 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                     value={expectations.locations}
                     onChange={(e) =>
                       setExpectations((prev) => ({
@@ -1457,7 +1467,8 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0 animate-pulse" />
-              Generating role-intent keywords, filtering hard matches, and ranking fit…
+              Generating role-intent keywords, filtering hard matches, and
+              ranking fit…
             </div>
           </div>
         </div>
